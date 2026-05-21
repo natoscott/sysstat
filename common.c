@@ -37,9 +37,9 @@
 #include "version.h"
 #include "common.h"
 
-#ifndef SOURCE_SADC
+#if !defined(SOURCE_SADC) || defined(HAVE_PCP)
 #include "ioconf.h"
-#endif /* SOURCE_SADC */
+#endif
 
 #ifdef USE_NLS
 #include <locale.h>
@@ -50,7 +50,7 @@
 #endif
 
 /* Number of decimal places */
-extern int dplaces_nr;
+int dplaces_nr = -1;
 
 /* Units (sectors, Bytes, kilobytes, etc.) */
 char units[] = {'s', 'B', 'k', 'M', 'G', 'T', 'P', '?'};
@@ -509,7 +509,7 @@ size_t mul_check_overflow4(size_t val1, size_t val2, size_t val3, size_t val4)
 	return (val1 * val2 * val3 * val4);
 }
 
-#ifndef SOURCE_SADC
+#if defined(SOURCE_SAR) || defined(SOURCE_SADF) || defined(HAVE_PCP)
 /*
  ***************************************************************************
  * Read /proc/devices file and get device-mapper major number.
@@ -1904,4 +1904,4 @@ void write_sample_timestamp(int tab, struct tm *rectime, uint64_t xflags)
 #endif
 }
 
-#endif /* SOURCE_SADC undefined */
+#endif /* SOURCE_SAR || SOURCE_SADF || HAVE_PCP */
