@@ -4381,7 +4381,7 @@ void pcp_def_net_etcp_metrics(struct activity *a) {}
 void pcp_def_net_udp_metrics(struct activity *a) {}
 void pcp_def_net_sock6_metrics(struct activity *a) {}
 void pcp_def_net_ip6_metrics(struct activity *a) {}
-void pcp_def_net_eip6_metrics(struct acivity *a) {}
+void pcp_def_net_eip6_metrics(struct activity *a) {}
 void pcp_def_net_icmp6_metrics(struct activity *a) {}
 void pcp_def_net_eicmp6_metrics(struct activity *a) {}
 void pcp_def_net_udp6_metrics(struct activity *a) {}

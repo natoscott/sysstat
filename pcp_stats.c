@@ -40,7 +40,9 @@
 extern struct record_header record_hdr[];
 extern struct activity *act[];
 extern uint64_t flags;
-extern char bat_status[][16];
+static const char * const bat_status[] = {
+	"Unknown", "Charging", "Discharging", "NotCharging", "Full"
+};
 
 /*
  ***************************************************************************
@@ -251,37 +253,37 @@ __print_funct_t pcp_print_cpu_stats(struct activity *a, int curr)
 			}
 		}
 
-		snprintf(buf, sizeof(buf), "%llu", scc->cpu_user - scc->cpu_guest);
+		pmsprintf(buf, sizeof(buf), "%llu", scc->cpu_user - scc->cpu_guest);
 		pmiPutValue(i ? "kernel.percpu.cpu.user" : "kernel.all.cpu.user", str, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", scc->cpu_nice - scc->cpu_guest_nice);
+		pmsprintf(buf, sizeof(buf), "%llu", scc->cpu_nice - scc->cpu_guest_nice);
 		pmiPutValue(i ? "kernel.percpu.cpu.nice" : "kernel.all.cpu.nice", str, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", scc->cpu_sys);
+		pmsprintf(buf, sizeof(buf), "%llu", scc->cpu_sys);
 		pmiPutValue(i ? "kernel.percpu.cpu.sys" : "kernel.all.cpu.sys", str, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", scc->cpu_iowait);
+		pmsprintf(buf, sizeof(buf), "%llu", scc->cpu_iowait);
 		pmiPutValue(i ? "kernel.percpu.cpu.iowait" : "kernel.all.cpu.iowait", str, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", scc->cpu_steal);
+		pmsprintf(buf, sizeof(buf), "%llu", scc->cpu_steal);
 		pmiPutValue(i ? "kernel.percpu.cpu.steal" : "kernel.all.cpu.steal", str, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", scc->cpu_hardirq + scc->cpu_softirq);
+		pmsprintf(buf, sizeof(buf), "%llu", scc->cpu_hardirq + scc->cpu_softirq);
 		pmiPutValue(i ? "kernel.percpu.cpu.irq.total" : "kernel.all.cpu.irq.total", str, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", scc->cpu_hardirq);
+		pmsprintf(buf, sizeof(buf), "%llu", scc->cpu_hardirq);
 		pmiPutValue(i ? "kernel.percpu.cpu.irq.hard" : "kernel.all.cpu.irq.hard", str, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", scc->cpu_softirq);
+		pmsprintf(buf, sizeof(buf), "%llu", scc->cpu_softirq);
 		pmiPutValue(i ? "kernel.percpu.cpu.irq.soft" : "kernel.all.cpu.irq.soft", str, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", scc->cpu_guest);
+		pmsprintf(buf, sizeof(buf), "%llu", scc->cpu_guest);
 		pmiPutValue(i ? "kernel.percpu.cpu.guest" : "kernel.all.cpu.guest", str, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", scc->cpu_guest_nice);
+		pmsprintf(buf, sizeof(buf), "%llu", scc->cpu_guest_nice);
 		pmiPutValue(i ? "kernel.percpu.cpu.guest_nice" : "kernel.all.cpu.guest_nice", str, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", scc->cpu_idle);
+		pmsprintf(buf, sizeof(buf), "%llu", scc->cpu_idle);
 		pmiPutValue(i ? "kernel.percpu.cpu.idle" : "kernel.all.cpu.idle", str, buf);
 	}
 }
@@ -298,38 +300,134 @@ __print_funct_t pcp_print_cpu_stats(struct activity *a, int curr)
  */
 void pcp_read_cpu_stats(pmValueSet *values, struct activity *a, int curr)
 {
-	pcp_reallocate_buffers(values, a, curr);
+	int j, n;
+	struct stats_cpu *scc;
 
-
-#if 0	// TODO: per-CPU
 	switch (values->pmid) {
 
-		case PMID_CPU_ALLCPU_USER:
-		case PMID_CPU_ALLCPU_SYS:
-		case PMID_CPU_ALLCPU_NICE:
-		case PMID_CPU_ALLCPU_IDLE:
-		case PMID_CPU_ALLCPU_WAITTOTAL:
-		case PMID_CPU_ALLCPU_IRQTOTAL:
-		case PMID_CPU_ALLCPU_IRQSOFT:
-		case PMID_CPU_ALLCPU_IRQHARD:
-		case PMID_CPU_ALLCPU_STEAL:
-		case PMID_CPU_ALLCPU_GUEST:
-		case PMID_CPU_ALLCPU_GUESTNICE:
-		case PMID_CPU_PERCPU_USER:
-		case PMID_CPU_PERCPU_NICE:
-		case PMID_CPU_PERCPU_SYS:
-		case PMID_CPU_PERCPU_IDLE:
-		case PMID_CPU_PERCPU_WAITTOTAL:
-		case PMID_CPU_PERCPU_IRQTOTAL:
-		case PMID_CPU_PERCPU_IRQSOFT:
-		case PMID_CPU_PERCPU_IRQHARD:
-		case PMID_CPU_PERCPU_STEAL:
-		case PMID_CPU_PERCPU_GUEST:
-		case PMID_CPU_PERCPU_GUESTNICE:
-		case PMID_CPU_PERCPU_INTERRUPTS:
+	/* All-CPU scalar metrics: write into slot 0 */
+	case PMID_CPU_ALLCPU_USER:
+		scc = (struct stats_cpu *) a->buf[curr];
+		scc->cpu_user = pcp_read_u64(values, 0, cpu_metric_descs, CPU_ALLCPU_USER);
+		break;
+	case PMID_CPU_ALLCPU_NICE:
+		scc = (struct stats_cpu *) a->buf[curr];
+		scc->cpu_nice = pcp_read_u64(values, 0, cpu_metric_descs, CPU_ALLCPU_NICE);
+		break;
+	case PMID_CPU_ALLCPU_SYS:
+		scc = (struct stats_cpu *) a->buf[curr];
+		scc->cpu_sys = pcp_read_u64(values, 0, cpu_metric_descs, CPU_ALLCPU_SYS);
+		break;
+	case PMID_CPU_ALLCPU_IDLE:
+		scc = (struct stats_cpu *) a->buf[curr];
+		scc->cpu_idle = pcp_read_u64(values, 0, cpu_metric_descs, CPU_ALLCPU_IDLE);
+		break;
+	case PMID_CPU_ALLCPU_WAITTOTAL:
+		scc = (struct stats_cpu *) a->buf[curr];
+		scc->cpu_iowait = pcp_read_u64(values, 0, cpu_metric_descs, CPU_ALLCPU_WAITTOTAL);
+		break;
+	case PMID_CPU_ALLCPU_IRQTOTAL:
+		/* Reconstructed from IRQHARD + IRQSOFT; skip */
+		break;
+	case PMID_CPU_ALLCPU_IRQHARD:
+		scc = (struct stats_cpu *) a->buf[curr];
+		scc->cpu_hardirq = pcp_read_u64(values, 0, cpu_metric_descs, CPU_ALLCPU_IRQHARD);
+		break;
+	case PMID_CPU_ALLCPU_IRQSOFT:
+		scc = (struct stats_cpu *) a->buf[curr];
+		scc->cpu_softirq = pcp_read_u64(values, 0, cpu_metric_descs, CPU_ALLCPU_IRQSOFT);
+		break;
+	case PMID_CPU_ALLCPU_STEAL:
+		scc = (struct stats_cpu *) a->buf[curr];
+		scc->cpu_steal = pcp_read_u64(values, 0, cpu_metric_descs, CPU_ALLCPU_STEAL);
+		break;
+	case PMID_CPU_ALLCPU_GUEST:
+		scc = (struct stats_cpu *) a->buf[curr];
+		scc->cpu_guest = pcp_read_u64(values, 0, cpu_metric_descs, CPU_ALLCPU_GUEST);
+		/* Restore original cpu_user (write path stored user - guest) */
+		scc->cpu_user += scc->cpu_guest;
+		break;
+	case PMID_CPU_ALLCPU_GUESTNICE:
+		scc = (struct stats_cpu *) a->buf[curr];
+		scc->cpu_guest_nice = pcp_read_u64(values, 0, cpu_metric_descs, CPU_ALLCPU_GUESTNICE);
+		/* Restore original cpu_nice (write path stored nice - guest_nice) */
+		scc->cpu_nice += scc->cpu_guest_nice;
+		break;
+
+	/* Per-CPU metrics: slot 0 = "all", slots 1..N = cpu0..cpuN-1 */
+	case PMID_CPU_PERCPU_USER:
+		n = values->numval + 1;
+		if (n > a->nr_allocated)
+			reallocate_buffers(a, n, flags);
+		a->nr[curr] = n;
+		for (j = 0; j < values->numval; j++) {
+			scc = (struct stats_cpu *) ((char *) a->buf[curr] + (j + 1) * a->msize);
+			scc->cpu_user = pcp_read_u64(values, j, cpu_metric_descs, CPU_PERCPU_USER);
+		}
+		break;
+	case PMID_CPU_PERCPU_NICE:
+		for (j = 0; j < values->numval; j++) {
+			scc = (struct stats_cpu *) ((char *) a->buf[curr] + (j + 1) * a->msize);
+			scc->cpu_nice = pcp_read_u64(values, j, cpu_metric_descs, CPU_PERCPU_NICE);
+		}
+		break;
+	case PMID_CPU_PERCPU_SYS:
+		for (j = 0; j < values->numval; j++) {
+			scc = (struct stats_cpu *) ((char *) a->buf[curr] + (j + 1) * a->msize);
+			scc->cpu_sys = pcp_read_u64(values, j, cpu_metric_descs, CPU_PERCPU_SYS);
+		}
+		break;
+	case PMID_CPU_PERCPU_IDLE:
+		for (j = 0; j < values->numval; j++) {
+			scc = (struct stats_cpu *) ((char *) a->buf[curr] + (j + 1) * a->msize);
+			scc->cpu_idle = pcp_read_u64(values, j, cpu_metric_descs, CPU_PERCPU_IDLE);
+		}
+		break;
+	case PMID_CPU_PERCPU_WAITTOTAL:
+		for (j = 0; j < values->numval; j++) {
+			scc = (struct stats_cpu *) ((char *) a->buf[curr] + (j + 1) * a->msize);
+			scc->cpu_iowait = pcp_read_u64(values, j, cpu_metric_descs, CPU_PERCPU_WAITTOTAL);
+		}
+		break;
+	case PMID_CPU_PERCPU_IRQTOTAL:
+		/* Reconstructed from IRQHARD + IRQSOFT; skip */
+		break;
+	case PMID_CPU_PERCPU_IRQHARD:
+		for (j = 0; j < values->numval; j++) {
+			scc = (struct stats_cpu *) ((char *) a->buf[curr] + (j + 1) * a->msize);
+			scc->cpu_hardirq = pcp_read_u64(values, j, cpu_metric_descs, CPU_PERCPU_IRQHARD);
+		}
+		break;
+	case PMID_CPU_PERCPU_IRQSOFT:
+		for (j = 0; j < values->numval; j++) {
+			scc = (struct stats_cpu *) ((char *) a->buf[curr] + (j + 1) * a->msize);
+			scc->cpu_softirq = pcp_read_u64(values, j, cpu_metric_descs, CPU_PERCPU_IRQSOFT);
+		}
+		break;
+	case PMID_CPU_PERCPU_STEAL:
+		for (j = 0; j < values->numval; j++) {
+			scc = (struct stats_cpu *) ((char *) a->buf[curr] + (j + 1) * a->msize);
+			scc->cpu_steal = pcp_read_u64(values, j, cpu_metric_descs, CPU_PERCPU_STEAL);
+		}
+		break;
+	case PMID_CPU_PERCPU_GUEST:
+		for (j = 0; j < values->numval; j++) {
+			scc = (struct stats_cpu *) ((char *) a->buf[curr] + (j + 1) * a->msize);
+			scc->cpu_guest = pcp_read_u64(values, j, cpu_metric_descs, CPU_PERCPU_GUEST);
+			scc->cpu_user += scc->cpu_guest;
+		}
+		break;
+	case PMID_CPU_PERCPU_GUESTNICE:
+		for (j = 0; j < values->numval; j++) {
+			scc = (struct stats_cpu *) ((char *) a->buf[curr] + (j + 1) * a->msize);
+			scc->cpu_guest_nice = pcp_read_u64(values, j, cpu_metric_descs, CPU_PERCPU_GUESTNICE);
+			scc->cpu_nice += scc->cpu_guest_nice;
+		}
+		break;
+	case PMID_CPU_PERCPU_INTERRUPTS:
+		/* Per-interrupt-per-CPU data lives in A_IRQ; nothing to store here */
+		break;
 	}
-#endif
-fprintf(stderr, "%s: not yet implemented\n", __FUNCTION__);
 }
 
 /*
@@ -377,22 +475,22 @@ __print_funct_t pcp_print_softnet_stats(struct activity *a, int curr)
 			sprintf(cpuno, "cpu%d", i - 1);
 		}
 
-		snprintf(buf, sizeof(buf), "%llu", (unsigned long long) ssnc->processed);
+		pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) ssnc->processed);
 		pmiPutValue("network.softnet.percpu.processed", cpuno, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", (unsigned long long) ssnc->dropped);
+		pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) ssnc->dropped);
 		pmiPutValue("network.softnet.percpu.dropped", cpuno, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", (unsigned long long) ssnc->time_squeeze);
+		pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) ssnc->time_squeeze);
 		pmiPutValue("network.softnet.percpu.time_squeeze", cpuno, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", (unsigned long long) ssnc->received_rps);
+		pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) ssnc->received_rps);
 		pmiPutValue("network.softnet.percpu.received_rps", cpuno, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", (unsigned long long) ssnc->flow_limit);
+		pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) ssnc->flow_limit);
 		pmiPutValue("network.softnet.percpu.flow_limit", cpuno, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", (unsigned long long) ssnc->backlog_len);
+		pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) ssnc->backlog_len);
 		pmiPutValue("network.softnet.percpu.backlog_length", cpuno, buf);
 	}
 }
@@ -409,26 +507,71 @@ __print_funct_t pcp_print_softnet_stats(struct activity *a, int curr)
  */
 void pcp_read_softnet_stats(pmValueSet *values, struct activity *a, int curr)
 {
-#if 0 // TODO: per-CPU
+	int j, n;
 	struct stats_softnet *ssnc;
 
+	/*
+	 * The write path skips the "all" slot and only writes PERCPU metrics.
+	 * Buffer layout: slot 0 = "all" (computed later), slots 1..N = cpu0..cpuN-1.
+	 */
 	switch (values->pmid) {
 
-		case PMID_SOFTNET_ALLCPU_PROCESSED:
-		case PMID_SOFTNET_ALLCPU_DROPPED:
-		case PMID_SOFTNET_ALLCPU_TIMESQUEEZE:
-		case PMID_SOFTNET_ALLCPU_RECEIVEDRPS:
-		case PMID_SOFTNET_ALLCPU_FLOWLIMIT:
-		case PMID_SOFTNET_ALLCPU_BACKLOGLENGTH:
-		case PMID_SOFTNET_PERCPU_PROCESSED:
-		case PMID_SOFTNET_PERCPU_DROPPED:
-		case PMID_SOFTNET_PERCPU_TIMESQUEEZE:
-		case PMID_SOFTNET_PERCPU_RECEIVEDRPS:
-		case PMID_SOFTNET_PERCPU_FLOWLIMIT:
-		case PMID_SOFTNET_PERCPU_BACKLOGLENGTH:
+	/* ALLCPU metrics come from PCP live data, not sysstat archives; skip */
+	case PMID_SOFTNET_ALLCPU_PROCESSED:
+	case PMID_SOFTNET_ALLCPU_DROPPED:
+	case PMID_SOFTNET_ALLCPU_TIMESQUEEZE:
+	case PMID_SOFTNET_ALLCPU_RECEIVEDRPS:
+	case PMID_SOFTNET_ALLCPU_FLOWLIMIT:
+	case PMID_SOFTNET_ALLCPU_BACKLOGLENGTH:
+		break;
+
+	case PMID_SOFTNET_PERCPU_PROCESSED:
+		n = values->numval + 1;
+		if (n > a->nr_allocated)
+			reallocate_buffers(a, n, flags);
+		a->nr[curr] = n;
+		for (j = 0; j < values->numval; j++) {
+			ssnc = (struct stats_softnet *) ((char *) a->buf[curr] + (j + 1) * a->msize);
+			ssnc->processed = pcp_read_u32(values, j, softnet_metric_descs,
+						       SOFTNET_PERCPU_PROCESSED);
+		}
+		break;
+	case PMID_SOFTNET_PERCPU_DROPPED:
+		for (j = 0; j < values->numval; j++) {
+			ssnc = (struct stats_softnet *) ((char *) a->buf[curr] + (j + 1) * a->msize);
+			ssnc->dropped = pcp_read_u32(values, j, softnet_metric_descs,
+						     SOFTNET_PERCPU_DROPPED);
+		}
+		break;
+	case PMID_SOFTNET_PERCPU_TIMESQUEEZE:
+		for (j = 0; j < values->numval; j++) {
+			ssnc = (struct stats_softnet *) ((char *) a->buf[curr] + (j + 1) * a->msize);
+			ssnc->time_squeeze = pcp_read_u32(values, j, softnet_metric_descs,
+							  SOFTNET_PERCPU_TIMESQUEEZE);
+		}
+		break;
+	case PMID_SOFTNET_PERCPU_RECEIVEDRPS:
+		for (j = 0; j < values->numval; j++) {
+			ssnc = (struct stats_softnet *) ((char *) a->buf[curr] + (j + 1) * a->msize);
+			ssnc->received_rps = pcp_read_u32(values, j, softnet_metric_descs,
+							  SOFTNET_PERCPU_RECEIVEDRPS);
+		}
+		break;
+	case PMID_SOFTNET_PERCPU_FLOWLIMIT:
+		for (j = 0; j < values->numval; j++) {
+			ssnc = (struct stats_softnet *) ((char *) a->buf[curr] + (j + 1) * a->msize);
+			ssnc->flow_limit = pcp_read_u32(values, j, softnet_metric_descs,
+							SOFTNET_PERCPU_FLOWLIMIT);
+		}
+		break;
+	case PMID_SOFTNET_PERCPU_BACKLOGLENGTH:
+		for (j = 0; j < values->numval; j++) {
+			ssnc = (struct stats_softnet *) ((char *) a->buf[curr] + (j + 1) * a->msize);
+			ssnc->backlog_len = pcp_read_u32(values, j, softnet_metric_descs,
+							 SOFTNET_PERCPU_BACKLOGLENGTH);
+		}
+		break;
 	}
-#endif
-fprintf(stderr, "%s: not yet implemented\n", __FUNCTION__);
 }
 
 /*
@@ -446,10 +589,10 @@ __print_funct_t pcp_print_pcsw_stats(struct activity *a, int curr)
 	struct stats_pcsw
 		*spc = (struct stats_pcsw *) a->buf[curr];
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->context_switch);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->context_switch);
 	pmiPutValue("kernel.all.pswitch", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%lu", spc->processes);
+	pmsprintf(buf, sizeof(buf), "%lu", spc->processes);
 	pmiPutValue("kernel.all.sysfork", NULL, buf);
 }
 
@@ -530,7 +673,7 @@ __print_funct_t pcp_print_irq_stats(struct activity *a, int curr)
 				/* No */
 				continue;
 
-			snprintf(buf, sizeof(buf), "%u", stc_cpu_irq->irq_nr);
+			pmsprintf(buf, sizeof(buf), "%u", stc_cpu_irq->irq_nr);
 
 			if (!c) {
 				/* This is CPU "all" */
@@ -545,7 +688,7 @@ __print_funct_t pcp_print_irq_stats(struct activity *a, int curr)
 			}
 			else {
 				/* This is a particular CPU */
-				snprintf(name, sizeof(name), "%s::cpu%d",
+				pmsprintf(name, sizeof(name), "%s::cpu%d",
 					 stc_cpuall_irq->irq_name, c - 1);
 
 				pmiPutValue("kernel.percpu.interrupts", name, buf);
@@ -566,14 +709,23 @@ __print_funct_t pcp_print_irq_stats(struct activity *a, int curr)
  */
 void pcp_read_irq_stats(pmValueSet *values, struct activity *a, int curr)
 {
-#if 0 // TODO: per-CPU and per-interrupt-line
+	struct stats_irq *stc;
+
 	switch (values->pmid) {
-		case PMID_IRQ_ALLIRQ_TOTAL:
-		case PMID_IRQ_PERIRQ_TOTAL:
-			break;
+	case PMID_IRQ_ALLIRQ_TOTAL:
+		/* Total interrupt count for all CPUs — stored in slot [0] */
+		pcp_reallocate_buffers(values, a, curr);
+		stc = (struct stats_irq *) a->buf[curr];
+		stc->irq_nr = pcp_read_u32(values, 0, irq_metric_descs,
+					   IRQ_ALLIRQ_TOTAL);
+		strncpy(stc->irq_name, "sum", MAX_SA_IRQ_LEN - 1);
+		stc->irq_name[MAX_SA_IRQ_LEN - 1] = '\0';
+		break;
+
+	case PMID_IRQ_PERIRQ_TOTAL:
+		/* Per-interrupt-line totals: complex 2D layout, not yet implemented */
+		break;
 	}
-#endif
-fprintf(stderr, "%s: not yet implemented\n", __FUNCTION__);
 }
 
 /*
@@ -591,10 +743,10 @@ __print_funct_t pcp_print_swap_stats(struct activity *a, int curr)
 	struct stats_swap
 		*ssc = (struct stats_swap *) a->buf[curr];
 
-	snprintf(buf, sizeof(buf), "%lu", ssc->pswpin);
+	pmsprintf(buf, sizeof(buf), "%lu", ssc->pswpin);
 	pmiPutValue("swap.pagesin", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%lu", ssc->pswpout);
+	pmsprintf(buf, sizeof(buf), "%lu", ssc->pswpout);
 	pmiPutValue("swap.pagesout", NULL, buf);
 }
 
@@ -640,34 +792,34 @@ __print_funct_t pcp_print_paging_stats(struct activity *a, int curr)
 	struct stats_paging
 		*spc = (struct stats_paging *) a->buf[curr];
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgpgin);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgpgin);
 	pmiPutValue("mem.vmstat.pgpgin", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgpgout);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgpgout);
 	pmiPutValue("mem.vmstat.pgpgout", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgfault);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgfault);
 	pmiPutValue("mem.vmstat.pgfault", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgmajfault);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgmajfault);
 	pmiPutValue("mem.vmstat.pgmajfault", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgfree);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgfree);
 	pmiPutValue("mem.vmstat.pgfree", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgscan_kswapd);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgscan_kswapd);
 	pmiPutValue("mem.vmstat.pgscan_kswapd_total", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgscan_direct);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgscan_direct);
 	pmiPutValue("mem.vmstat.pgscan_direct_total", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgsteal);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgsteal);
 	pmiPutValue("mem.vmstat.pgsteal_total", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgpromote);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgpromote);
 	pmiPutValue("mem.vmstat.pgpromote_success", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgdemote);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgdemote);
 	pmiPutValue("mem.vmstat.pgdemote_total", NULL, buf);
 }
 
@@ -763,25 +915,25 @@ __print_funct_t pcp_print_io_stats(struct activity *a, int curr)
 	struct stats_io
 		*sic = (struct stats_io *) a->buf[curr];
 
-	snprintf(buf, sizeof(buf), "%llu", sic->dk_drive);
+	pmsprintf(buf, sizeof(buf), "%llu", sic->dk_drive);
 	pmiPutValue("disk.all.total", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", sic->dk_drive_rio);
+	pmsprintf(buf, sizeof(buf), "%llu", sic->dk_drive_rio);
 	pmiPutValue("disk.all.read", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu",sic->dk_drive_wio);
+	pmsprintf(buf, sizeof(buf), "%llu",sic->dk_drive_wio);
 	pmiPutValue("disk.all.write", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", sic->dk_drive_dio);
+	pmsprintf(buf, sizeof(buf), "%llu", sic->dk_drive_dio);
 	pmiPutValue("disk.all.discard", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", sic->dk_drive_rblk);
+	pmsprintf(buf, sizeof(buf), "%llu", sic->dk_drive_rblk);
 	pmiPutValue("disk.all.read_bytes", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", sic->dk_drive_wblk);
+	pmsprintf(buf, sizeof(buf), "%llu", sic->dk_drive_wblk);
 	pmiPutValue("disk.all.write_bytes", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", sic->dk_drive_dblk);
+	pmsprintf(buf, sizeof(buf), "%llu", sic->dk_drive_dblk);
 	pmiPutValue("disk.all.discard_bytes", NULL, buf);
 }
 
@@ -799,56 +951,56 @@ void pcp_print_ram_memory_stats(struct stats_memory *smc, int dispall)
 #ifdef HAVE_PCP
 	char buf[64];
 
-	snprintf(buf, sizeof(buf), "%lu", (unsigned long) (smc->tlmkb >> 10));
+	pmsprintf(buf, sizeof(buf), "%lu", (unsigned long) (smc->tlmkb >> 10));
 	pmiPutValue("hinv.physmem", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", smc->tlmkb);
+	pmsprintf(buf, sizeof(buf), "%llu", smc->tlmkb);
 	pmiPutValue("mem.physmem", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", smc->frmkb);
+	pmsprintf(buf, sizeof(buf), "%llu", smc->frmkb);
 	pmiPutValue("mem.util.free", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", smc->availablekb);
+	pmsprintf(buf, sizeof(buf), "%llu", smc->availablekb);
 	pmiPutValue("mem.util.available", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", smc->tlmkb - smc->availablekb);
+	pmsprintf(buf, sizeof(buf), "%llu", smc->tlmkb - smc->availablekb);
 	pmiPutValue("mem.util.used", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", smc->bufkb);
+	pmsprintf(buf, sizeof(buf), "%llu", smc->bufkb);
 	pmiPutValue("mem.util.bufmem", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", smc->camkb);
+	pmsprintf(buf, sizeof(buf), "%llu", smc->camkb);
 	pmiPutValue("mem.util.cached", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", smc->comkb);
+	pmsprintf(buf, sizeof(buf), "%llu", smc->comkb);
 	pmiPutValue("mem.util.committed_AS", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", smc->activekb);
+	pmsprintf(buf, sizeof(buf), "%llu", smc->activekb);
 	pmiPutValue("mem.util.active", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", smc->inactkb);
+	pmsprintf(buf, sizeof(buf), "%llu", smc->inactkb);
 	pmiPutValue("mem.util.inactive", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", smc->dirtykb);
+	pmsprintf(buf, sizeof(buf), "%llu", smc->dirtykb);
 	pmiPutValue("mem.util.dirty", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", smc->shmemkb);
+	pmsprintf(buf, sizeof(buf), "%llu", smc->shmemkb);
 	pmiPutValue("mem.util.shared", NULL, buf);
 
 	if (dispall) {
-		snprintf(buf, sizeof(buf), "%llu", smc->anonpgkb);
+		pmsprintf(buf, sizeof(buf), "%llu", smc->anonpgkb);
 		pmiPutValue("mem.util.anonpages", NULL, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", smc->slabkb);
+		pmsprintf(buf, sizeof(buf), "%llu", smc->slabkb);
 		pmiPutValue("mem.util.slab", NULL, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", smc->kstackkb);
+		pmsprintf(buf, sizeof(buf), "%llu", smc->kstackkb);
 		pmiPutValue("mem.util.kernelStack", NULL, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", smc->pgtblkb);
+		pmsprintf(buf, sizeof(buf), "%llu", smc->pgtblkb);
 		pmiPutValue("mem.util.pageTables", NULL, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", smc->vmusedkb);
+		pmsprintf(buf, sizeof(buf), "%llu", smc->vmusedkb);
 		pmiPutValue("mem.util.vmallocUsed", NULL, buf);
 	}
 #endif	/* HAVE_PCP */
@@ -867,13 +1019,13 @@ void pcp_print_swap_memory_stats(struct stats_memory *smc)
 #ifdef HAVE_PCP
 	char buf[64];
 
-	snprintf(buf, sizeof(buf), "%llu", smc->frskb);
+	pmsprintf(buf, sizeof(buf), "%llu", smc->frskb);
 	pmiPutValue("mem.util.swapFree", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", smc->tlskb);
+	pmsprintf(buf, sizeof(buf), "%llu", smc->tlskb);
 	pmiPutValue("mem.util.swapTotal", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", smc->caskb);
+	pmsprintf(buf, sizeof(buf), "%llu", smc->caskb);
 	pmiPutValue("mem.util.swapCached", NULL, buf);
 #endif	/* HAVE_PCP */
 }
@@ -1071,16 +1223,16 @@ __print_funct_t pcp_print_ktables_stats(struct activity *a, int curr)
 	struct stats_ktables
 		*skc = (struct stats_ktables *) a->buf[curr];
 
-	snprintf(buf, sizeof(buf), "%lu", (unsigned long) skc->dentry_stat);
+	pmsprintf(buf, sizeof(buf), "%lu", (unsigned long) skc->dentry_stat);
 	pmiPutValue("vfs.dentry.count", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%lu", (unsigned long) skc->file_used);
+	pmsprintf(buf, sizeof(buf), "%lu", (unsigned long) skc->file_used);
 	pmiPutValue("vfs.files.count", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%lu", (unsigned long) skc->inode_used);
+	pmsprintf(buf, sizeof(buf), "%lu", (unsigned long) skc->inode_used);
 	pmiPutValue("vfs.inodes.count", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", skc->pty_nr);
+	pmsprintf(buf, sizeof(buf), "%llu", skc->pty_nr);
 	pmiPutValue("kernel.all.nptys", NULL, buf);
 }
 
@@ -1137,22 +1289,22 @@ __print_funct_t pcp_print_queue_stats(struct activity *a, int curr)
 	struct stats_queue
 		*sqc = (struct stats_queue *) a->buf[curr];
 
-	snprintf(buf, sizeof(buf), "%lu", (unsigned long) sqc->nr_running);
+	pmsprintf(buf, sizeof(buf), "%lu", (unsigned long) sqc->nr_running);
 	pmiPutValue("kernel.all.runnable", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%lu", (unsigned long) sqc->nr_threads);
+	pmsprintf(buf, sizeof(buf), "%lu", (unsigned long) sqc->nr_threads);
 	pmiPutValue("kernel.all.nprocs", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%lu", (unsigned long) sqc->procs_blocked);
+	pmsprintf(buf, sizeof(buf), "%lu", (unsigned long) sqc->procs_blocked);
 	pmiPutValue("kernel.all.blocked", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%f", (double) sqc->load_avg_1 / 100.0);
+	pmsprintf(buf, sizeof(buf), "%f", (double) sqc->load_avg_1 / 100.0);
 	pmiPutValue("kernel.all.load", "1 minute", buf);
 
-	snprintf(buf, sizeof(buf), "%f", (double) sqc->load_avg_5 / 100.0);
+	pmsprintf(buf, sizeof(buf), "%f", (double) sqc->load_avg_5 / 100.0);
 	pmiPutValue("kernel.all.load", "5 minute", buf);
 
-	snprintf(buf, sizeof(buf), "%f", (double) sqc->load_avg_15 / 100.0);
+	pmsprintf(buf, sizeof(buf), "%f", (double) sqc->load_avg_15 / 100.0);
 	pmiPutValue("kernel.all.load", "15 minute", buf);
 }
 
@@ -1252,37 +1404,37 @@ __print_funct_t pcp_print_disk_stats(struct activity *a, int curr)
 				continue;
 		}
 
-		snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sdc->nr_ios);
+		pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sdc->nr_ios);
 		pmiPutValue("disk.dev.total", dev_name, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", (unsigned long long) (sdc->rd_sect + sdc->wr_sect) / 2);
+		pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) (sdc->rd_sect + sdc->wr_sect) / 2);
 		pmiPutValue("disk.dev.total_bytes", dev_name, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sdc->rd_sect / 2);
+		pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sdc->rd_sect / 2);
 		pmiPutValue("disk.dev.read_bytes", dev_name, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sdc->wr_sect / 2);
+		pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sdc->wr_sect / 2);
 		pmiPutValue("disk.dev.write_bytes", dev_name, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sdc->dc_sect / 2);
+		pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sdc->dc_sect / 2);
 		pmiPutValue("disk.dev.discard_bytes", dev_name, buf);
 
-		snprintf(buf, sizeof(buf), "%lu", (unsigned long) sdc->rd_ticks + sdc->wr_ticks);
+		pmsprintf(buf, sizeof(buf), "%lu", (unsigned long) sdc->rd_ticks + sdc->wr_ticks);
 		pmiPutValue("disk.dev.total_rawactive", dev_name, buf);
 
-		snprintf(buf, sizeof(buf), "%lu", (unsigned long) sdc->rd_ticks);
+		pmsprintf(buf, sizeof(buf), "%lu", (unsigned long) sdc->rd_ticks);
 		pmiPutValue("disk.dev.read_rawactive", dev_name, buf);
 
-		snprintf(buf, sizeof(buf), "%lu", (unsigned long) sdc->wr_ticks);
+		pmsprintf(buf, sizeof(buf), "%lu", (unsigned long) sdc->wr_ticks);
 		pmiPutValue("disk.dev.write_rawactive", dev_name, buf);
 
-		snprintf(buf, sizeof(buf), "%lu", (unsigned long)sdc->dc_ticks);
+		pmsprintf(buf, sizeof(buf), "%lu", (unsigned long)sdc->dc_ticks);
 		pmiPutValue("disk.dev.discard_rawactive", dev_name, buf);
 
-		snprintf(buf, sizeof(buf), "%lu", (unsigned long)sdc->tot_ticks);
+		pmsprintf(buf, sizeof(buf), "%lu", (unsigned long)sdc->tot_ticks);
 		pmiPutValue("disk.dev.avactive", dev_name, buf);
 
-		snprintf(buf, sizeof(buf), "%lu", (unsigned long)sdc->rq_ticks);
+		pmsprintf(buf, sizeof(buf), "%lu", (unsigned long)sdc->rq_ticks);
 		pmiPutValue("disk.dev.aveq", dev_name, buf);
 	}
 }
@@ -1297,27 +1449,116 @@ __print_funct_t pcp_print_disk_stats(struct activity *a, int curr)
  * @curr	Index in array for current sample statistics.
  ***************************************************************************
  */
+/*
+ * Look up major:minor for a block device name via /sys/class/block.
+ * Returns 0 on success, -1 if the device is not found on this machine.
+ */
+static int pcp_lookup_disk_major_minor(const char *name,
+				       unsigned int *major, unsigned int *minor)
+{
+	char path[PATH_MAX];
+	FILE *fp;
+
+	pmsprintf(path, sizeof(path), "/sys/class/block/%s/dev", name);
+	if ((fp = fopen(path, "r")) == NULL)
+		return -1;
+	if (fscanf(fp, "%u:%u", major, minor) != 2) {
+		fclose(fp);
+		return -1;
+	}
+	fclose(fp);
+	return 0;
+}
+
 void pcp_read_disk_stats(pmValueSet *values, struct activity *a, int curr)
 {
-#if 0 // TODO: per-disk
-	switch (values->pmid) {
+	int i, j;
+	struct stats_disk *sdc;
+	pmInDom indom = disk_metric_descs[0].indom;
+	char *name;
+
+	pcp_reallocate_buffers(values, a, curr);
+
+	for (j = 0; j < values->numval; j++) {
+		sdc = (struct stats_disk *) ((char *) a->buf[curr] + j * a->msize);
+
+		/* Populate major:minor from the instance name on first metric */
+		if (values->pmid == PMID_DISK_PERDEV_TOTAL) {
+			if (pmNameInDom(indom, values->vlist[j].inst, &name) >= 0) {
+				if (pcp_lookup_disk_major_minor(name,
+						&sdc->major, &sdc->minor) < 0) {
+					/* Archive from another machine: use slot index */
+					sdc->major = 0;
+					sdc->minor = (unsigned int) j;
+				}
+				free(name);
+			}
+		}
+
+		switch (values->pmid) {
 		case PMID_DISK_PERDEV_READ:
-		case PMID_DISK_PERDEV_WRITE:
-		case PMID_DISK_PERDEV_TOTAL:
-		case PMID_DISK_PERDEV_TOTALBYTES:
-		case PMID_DISK_PERDEV_READBYTES:
-		case PMID_DISK_PERDEV_WRITEBYTES:
-		case PMID_DISK_PERDEV_DISCARDBYTES:
-		case PMID_DISK_PERDEV_READACTIVE:
-		case PMID_DISK_PERDEV_WRITEACTIVE:
-		case PMID_DISK_PERDEV_TOTALACTIVE:
-		case PMID_DISK_PERDEV_DISCARDACTIVE:
-		case PMID_DISK_PERDEV_AVACTIVE:
-		case PMID_DISK_PERDEV_AVQUEUE:
+			/* read IOs not stored in native sa format; skip */
 			break;
+		case PMID_DISK_PERDEV_WRITE:
+			/* write IOs not stored in native sa format; skip */
+			break;
+		case PMID_DISK_PERDEV_TOTAL:
+			sdc->nr_ios = pcp_read_u64(values, j, disk_metric_descs,
+						   DISK_PERDEV_TOTAL);
+			break;
+		case PMID_DISK_PERDEV_TOTALBYTES:
+			/* stored as KB; rd_sect + wr_sect = 2 * KB value */
+			i = (int) pcp_read_u64(values, j, disk_metric_descs,
+					       DISK_PERDEV_TOTALBYTES);
+			/* split evenly — individual fields updated by READBYTES/WRITEBYTES */
+			sdc->rd_sect = (unsigned long) i;
+			sdc->wr_sect = 0;
+			break;
+		case PMID_DISK_PERDEV_READBYTES:
+			sdc->rd_sect = (unsigned long)
+				pcp_read_u64(values, j, disk_metric_descs,
+					     DISK_PERDEV_READBYTES) * 2;
+			break;
+		case PMID_DISK_PERDEV_WRITEBYTES:
+			sdc->wr_sect = (unsigned long)
+				pcp_read_u64(values, j, disk_metric_descs,
+					     DISK_PERDEV_WRITEBYTES) * 2;
+			break;
+		case PMID_DISK_PERDEV_DISCARDBYTES:
+			sdc->dc_sect = (unsigned long)
+				pcp_read_u64(values, j, disk_metric_descs,
+					     DISK_PERDEV_DISCARDBYTES) * 2;
+			break;
+		case PMID_DISK_PERDEV_READACTIVE:
+			sdc->rd_ticks = (unsigned int)
+				pcp_read_u64(values, j, disk_metric_descs,
+					     DISK_PERDEV_READACTIVE);
+			break;
+		case PMID_DISK_PERDEV_WRITEACTIVE:
+			sdc->wr_ticks = (unsigned int)
+				pcp_read_u64(values, j, disk_metric_descs,
+					     DISK_PERDEV_WRITEACTIVE);
+			break;
+		case PMID_DISK_PERDEV_TOTALACTIVE:
+			/* Reconstructed from rd_ticks + wr_ticks; skip */
+			break;
+		case PMID_DISK_PERDEV_DISCARDACTIVE:
+			sdc->dc_ticks = (unsigned int)
+				pcp_read_u64(values, j, disk_metric_descs,
+					     DISK_PERDEV_DISCARDACTIVE);
+			break;
+		case PMID_DISK_PERDEV_AVACTIVE:
+			sdc->tot_ticks = (unsigned int)
+				pcp_read_u64(values, j, disk_metric_descs,
+					     DISK_PERDEV_AVACTIVE);
+			break;
+		case PMID_DISK_PERDEV_AVQUEUE:
+			sdc->rq_ticks = (unsigned int)
+				pcp_read_u64(values, j, disk_metric_descs,
+					     DISK_PERDEV_AVQUEUE);
+			break;
+		}
 	}
-#endif
-fprintf(stderr, "%s: not yet implemented\n", __FUNCTION__);
 }
 
 /*
@@ -1355,25 +1596,25 @@ __print_funct_t pcp_print_net_dev_stats(struct activity *a, int curr)
 		 * for current interface.
 		 */
 
-		snprintf(buf, sizeof(buf), "%llu", sndc->rx_packets);
+		pmsprintf(buf, sizeof(buf), "%llu", sndc->rx_packets);
 		pmiPutValue("network.interface.in.packets", sndc->interface, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", sndc->tx_packets);
+		pmsprintf(buf, sizeof(buf), "%llu", sndc->tx_packets);
 		pmiPutValue("network.interface.out.packets", sndc->interface, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", sndc->rx_bytes);
+		pmsprintf(buf, sizeof(buf), "%llu", sndc->rx_bytes);
 		pmiPutValue("network.interface.in.bytes", sndc->interface, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", sndc->tx_bytes);
+		pmsprintf(buf, sizeof(buf), "%llu", sndc->tx_bytes);
 		pmiPutValue("network.interface.out.bytes", sndc->interface, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", sndc->rx_compressed);
+		pmsprintf(buf, sizeof(buf), "%llu", sndc->rx_compressed);
 		pmiPutValue("network.interface.in.compressed", sndc->interface, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", sndc->tx_compressed);
+		pmsprintf(buf, sizeof(buf), "%llu", sndc->tx_compressed);
 		pmiPutValue("network.interface.out.compressed", sndc->interface, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", sndc->multicast);
+		pmsprintf(buf, sizeof(buf), "%llu", sndc->multicast);
 		pmiPutValue("network.interface.in.mcasts", sndc->interface, buf);
 	}
 }
@@ -1390,73 +1631,54 @@ __print_funct_t pcp_print_net_dev_stats(struct activity *a, int curr)
  */
 void pcp_read_netdev_stats(pmValueSet *values, struct activity *a, int curr)
 {
+	int j;
+	struct stats_net_dev *sndc;
+	pmInDom indom = netdev_metric_descs[0].indom;
+	char *name;
+
 	pcp_reallocate_buffers(values, a, curr);
 
-#if 0 // TODO: per-disk
-	struct stats_net_dev	*sndc;
-	pmInDom			indom = netdev_metric_descs[0].indom;
-	char			*name;
-	int			i, n, sts, inst;
+	for (j = 0; j < values->numval; j++) {
+		sndc = (struct stats_net_dev *) ((char *) a->buf[curr] + j * a->msize);
 
-	for (i = 0; i < values->numval; i++) {
-		/* TODO: nuh, probably need to be smarter here */
-		inst = values->vlist[i].inst;
-		while (inst >= a->nr_allocated[curr]) {
-			reallocate_buffer(a);
+		/* Store the interface name — needed by the display code */
+		if (pmNameInDom(indom, values->vlist[j].inst, &name) >= 0) {
+			strncpy(sndc->interface, name, MAX_IFACE_LEN - 1);
+			sndc->interface[MAX_IFACE_LEN - 1] = '\0';
+			free(name);
 		}
-
-		/* TODO: optimize this, only needs to be done once */
-		sts = pmNameInDom(indom, inst, &name);
-		if (sts < 0) {
-			/* TODO: error handling? warning? (no instance name) */
-			continue;
-		}
-
-		sndc = (struct stats_net_dev *) ((char *) a->_buf0 + i * a->msize);
-		strncpy(sndc->interface, sizeof(sndc->interface)-1, name);
-		sndc->interface[sizeof(sndc->interface)-1] = '\0';
-		free(name);
 
 		switch (values->pmid) {
 		case PMID_NET_PERINTF_INPACKETS:
-			sndc->rx_packets = pcp_read_u64(values, i,
-						netdev_metric_descs,
-						NET_PERINTF_INPACKETS);
+			sndc->rx_packets = pcp_read_u64(values, j, netdev_metric_descs,
+							NET_PERINTF_INPACKETS);
 			break;
 		case PMID_NET_PERINTF_OUTPACKETS:
-			sndc->tx_packets = pcp_read_u64(values, i,
-						netdev_metric_descs,
-						NET_PERINTF_OUTPACKETS);
+			sndc->tx_packets = pcp_read_u64(values, j, netdev_metric_descs,
+							NET_PERINTF_OUTPACKETS);
 			break;
 		case PMID_NET_PERINTF_INBYTES:
-			sndc->rx_bytes = pcp_read_u64(values, i,
-						netdev_metric_descs,
-						NET_PERINTF_INBYTES);
+			sndc->rx_bytes = pcp_read_u64(values, j, netdev_metric_descs,
+						      NET_PERINTF_INBYTES);
 			break;
 		case PMID_NET_PERINTF_OUTBYTES:
-			sndc->tx_bytes = pcp_read_u64(values, i,
-						netdev_metric_descs,
-						NET_PERINTF_OUTBYTES);
+			sndc->tx_bytes = pcp_read_u64(values, j, netdev_metric_descs,
+						      NET_PERINTF_OUTBYTES);
 			break;
 		case PMID_NET_PERINTF_INCOMPRESS:
-			sndc->rx_compressed = pcp_read_u64(values, i,
-						netdev_metric_descs,
-						NET_PERINTF_INCOMPRESS);
+			sndc->rx_compressed = pcp_read_u64(values, j, netdev_metric_descs,
+							    NET_PERINTF_INCOMPRESS);
 			break;
 		case PMID_NET_PERINTF_OUTCOMPRESS:
-			sndc->tx_compressed = pcp_read_u64(values, i,
-						netdev_metric_descs,
-						NET_PERINTF_OUTCOMPRESS);
+			sndc->tx_compressed = pcp_read_u64(values, j, netdev_metric_descs,
+							    NET_PERINTF_OUTCOMPRESS);
 			break;
 		case PMID_NET_PERINTF_INMULTICAST:
-			sndc->multicast = pcp_read_u64(values, i,
-						netdev_metric_descs,
-						NET_PERINTF_INMULTICAST);
+			sndc->multicast = pcp_read_u64(values, j, netdev_metric_descs,
+						       NET_PERINTF_INMULTICAST);
 			break;
 		}
 	}
-#endif
-fprintf(stderr, "%s: not yet implemented\n", __FUNCTION__);
 }
 
 /*
@@ -1485,31 +1707,31 @@ __print_funct_t pcp_print_net_edev_stats(struct activity *a, int curr)
 				continue;
 		}
 
-		snprintf(buf, sizeof(buf), "%llu", snedc->rx_errors);
+		pmsprintf(buf, sizeof(buf), "%llu", snedc->rx_errors);
 		pmiPutValue("network.interface.in.errors", snedc->interface, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", snedc->tx_errors);
+		pmsprintf(buf, sizeof(buf), "%llu", snedc->tx_errors);
 		pmiPutValue("network.interface.out.errors", snedc->interface, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", snedc->collisions);
+		pmsprintf(buf, sizeof(buf), "%llu", snedc->collisions);
 		pmiPutValue("network.interface.collisions", snedc->interface, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", snedc->rx_dropped);
+		pmsprintf(buf, sizeof(buf), "%llu", snedc->rx_dropped);
 		pmiPutValue("network.interface.in.drops", snedc->interface, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", snedc->tx_dropped);
+		pmsprintf(buf, sizeof(buf), "%llu", snedc->tx_dropped);
 		pmiPutValue("network.interface.out.drops", snedc->interface, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", snedc->tx_carrier_errors);
+		pmsprintf(buf, sizeof(buf), "%llu", snedc->tx_carrier_errors);
 		pmiPutValue("network.interface.out.carrier", snedc->interface, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", snedc->rx_frame_errors);
+		pmsprintf(buf, sizeof(buf), "%llu", snedc->rx_frame_errors);
 		pmiPutValue("network.interface.in.frame", snedc->interface, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", snedc->rx_fifo_errors);
+		pmsprintf(buf, sizeof(buf), "%llu", snedc->rx_fifo_errors);
 		pmiPutValue("network.interface.in.fifo", snedc->interface, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", snedc->tx_fifo_errors);
+		pmsprintf(buf, sizeof(buf), "%llu", snedc->tx_fifo_errors);
 		pmiPutValue("network.interface.out.fifo", snedc->interface, buf);
 	}
 }
@@ -1526,21 +1748,61 @@ __print_funct_t pcp_print_net_edev_stats(struct activity *a, int curr)
  */
 void pcp_read_enetdev_stats(pmValueSet *values, struct activity *a, int curr)
 {
-#if 0 // TODO: per-interface
-	switch (values->pmid) {
+	int j;
+	struct stats_net_edev *snedc;
+	pmInDom indom = netedev_metric_descs[0].indom;
+	char *name;
+
+	pcp_reallocate_buffers(values, a, curr);
+
+	for (j = 0; j < values->numval; j++) {
+		snedc = (struct stats_net_edev *) ((char *) a->buf[curr] + j * a->msize);
+
+		if (pmNameInDom(indom, values->vlist[j].inst, &name) >= 0) {
+			strncpy(snedc->interface, name, MAX_IFACE_LEN - 1);
+			snedc->interface[MAX_IFACE_LEN - 1] = '\0';
+			free(name);
+		}
+
+		switch (values->pmid) {
 		case PMID_NET_EPERINTF_INERRORS:
-		case PMID_NET_EPERINTF_OUTERRORS:
-		case PMID_NET_EPERINTF_COLLISIONS:
-		case PMID_NET_EPERINTF_INDROPS:
-		case PMID_NET_EPERINTF_OUTDROPS:
-		case PMID_NET_EPERINTF_OUTCARRIER:
-		case PMID_NET_EPERINTF_INFRAME:
-		case PMID_NET_EPERINTF_INFIFO:
-		case PMID_NET_EPERINTF_OUTFIFO:
+			snedc->rx_errors = pcp_read_u64(values, j, netedev_metric_descs,
+							NET_EPERINTF_INERRORS);
 			break;
+		case PMID_NET_EPERINTF_OUTERRORS:
+			snedc->tx_errors = pcp_read_u64(values, j, netedev_metric_descs,
+							NET_EPERINTF_OUTERRORS);
+			break;
+		case PMID_NET_EPERINTF_COLLISIONS:
+			snedc->collisions = pcp_read_u64(values, j, netedev_metric_descs,
+							 NET_EPERINTF_COLLISIONS);
+			break;
+		case PMID_NET_EPERINTF_INDROPS:
+			snedc->rx_dropped = pcp_read_u64(values, j, netedev_metric_descs,
+							 NET_EPERINTF_INDROPS);
+			break;
+		case PMID_NET_EPERINTF_OUTDROPS:
+			snedc->tx_dropped = pcp_read_u64(values, j, netedev_metric_descs,
+							 NET_EPERINTF_OUTDROPS);
+			break;
+		case PMID_NET_EPERINTF_OUTCARRIER:
+			snedc->tx_carrier_errors = pcp_read_u64(values, j, netedev_metric_descs,
+								NET_EPERINTF_OUTCARRIER);
+			break;
+		case PMID_NET_EPERINTF_INFRAME:
+			snedc->rx_frame_errors = pcp_read_u64(values, j, netedev_metric_descs,
+							      NET_EPERINTF_INFRAME);
+			break;
+		case PMID_NET_EPERINTF_INFIFO:
+			snedc->rx_fifo_errors = pcp_read_u64(values, j, netedev_metric_descs,
+							     NET_EPERINTF_INFIFO);
+			break;
+		case PMID_NET_EPERINTF_OUTFIFO:
+			snedc->tx_fifo_errors = pcp_read_u64(values, j, netedev_metric_descs,
+							     NET_EPERINTF_OUTFIFO);
+			break;
+		}
 	}
-#endif
-fprintf(stderr, "%s: not yet implemented\n", __FUNCTION__);
 }
 
 /*
@@ -1562,24 +1824,24 @@ __print_funct_t pcp_print_serial_stats(struct activity *a, int curr)
 
 		ssc = (struct stats_serial *) ((char *) a->buf[curr] + i * a->msize);
 
-		snprintf(serialno, sizeof(serialno), "serial%u", ssc->line);
+		pmsprintf(serialno, sizeof(serialno), "serial%u", ssc->line);
 
-		snprintf(buf, sizeof(buf), "%u", ssc->rx);
+		pmsprintf(buf, sizeof(buf), "%u", ssc->rx);
 		pmiPutValue("tty.serial.rx", serialno, buf);
 
-		snprintf(buf, sizeof(buf), "%u", ssc->tx);
+		pmsprintf(buf, sizeof(buf), "%u", ssc->tx);
 		pmiPutValue("tty.serial.tx", serialno, buf);
 
-		snprintf(buf, sizeof(buf), "%u", ssc->frame);
+		pmsprintf(buf, sizeof(buf), "%u", ssc->frame);
 		pmiPutValue("tty.serial.frame", serialno, buf);
 
-		snprintf(buf, sizeof(buf), "%u", ssc->parity);
+		pmsprintf(buf, sizeof(buf), "%u", ssc->parity);
 		pmiPutValue("tty.serial.parity", serialno, buf);
 
-		snprintf(buf, sizeof(buf), "%u", ssc->brk);
+		pmsprintf(buf, sizeof(buf), "%u", ssc->brk);
 		pmiPutValue("tty.serial.brk", serialno, buf);
 
-		snprintf(buf, sizeof(buf), "%u", ssc->overrun);
+		pmsprintf(buf, sizeof(buf), "%u", ssc->overrun);
 		pmiPutValue("tty.serial.overrun", serialno, buf);
 	}
 }
@@ -1596,18 +1858,49 @@ __print_funct_t pcp_print_serial_stats(struct activity *a, int curr)
  */
 void pcp_read_serial_stats(pmValueSet *values, struct activity *a, int curr)
 {
-#if 0 // TODO: per-serial-line
-	switch (values->pmid) {
+	int j;
+	struct stats_serial *ssc;
+	pmInDom indom = serial_metric_descs[0].indom;
+	char *name;
+
+	pcp_reallocate_buffers(values, a, curr);
+
+	for (j = 0; j < values->numval; j++) {
+		ssc = (struct stats_serial *) ((char *) a->buf[curr] + j * a->msize);
+
+		/* Extract line number from the instance name (e.g. "serial0" → 0) */
+		if (pmNameInDom(indom, values->vlist[j].inst, &name) >= 0) {
+			sscanf(name, "serial%u", &ssc->line);
+			free(name);
+		}
+
+		switch (values->pmid) {
 		case PMID_SERIAL_PERTTY_RX:
-		case PMID_SERIAL_PERTTY_TX:
-		case PMID_SERIAL_PERTTY_FRAME:
-		case PMID_SERIAL_PERTTY_PARITY:
-		case PMID_SERIAL_PERTTY_BRK:
-		case PMID_SERIAL_PERTTY_OVERRUN:
+			ssc->rx = pcp_read_u32(values, j, serial_metric_descs,
+					       SERIAL_PERTTY_RX);
 			break;
+		case PMID_SERIAL_PERTTY_TX:
+			ssc->tx = pcp_read_u32(values, j, serial_metric_descs,
+					       SERIAL_PERTTY_TX);
+			break;
+		case PMID_SERIAL_PERTTY_FRAME:
+			ssc->frame = pcp_read_u32(values, j, serial_metric_descs,
+						  SERIAL_PERTTY_FRAME);
+			break;
+		case PMID_SERIAL_PERTTY_PARITY:
+			ssc->parity = pcp_read_u32(values, j, serial_metric_descs,
+						   SERIAL_PERTTY_PARITY);
+			break;
+		case PMID_SERIAL_PERTTY_BRK:
+			ssc->brk = pcp_read_u32(values, j, serial_metric_descs,
+						SERIAL_PERTTY_BRK);
+			break;
+		case PMID_SERIAL_PERTTY_OVERRUN:
+			ssc->overrun = pcp_read_u32(values, j, serial_metric_descs,
+						    SERIAL_PERTTY_OVERRUN);
+			break;
+		}
 	}
-#endif
-fprintf(stderr, "%s: not yet implemented\n", __FUNCTION__);
 }
 
 /*
@@ -1625,22 +1918,22 @@ __print_funct_t pcp_print_net_nfs_stats(struct activity *a, int curr)
 	struct stats_net_nfs
 		*snnc = (struct stats_net_nfs *) a->buf[curr];
 
-	snprintf(buf, sizeof(buf), "%u", snnc->nfs_rpccnt);
+	pmsprintf(buf, sizeof(buf), "%u", snnc->nfs_rpccnt);
 	pmiPutValue("rpc.client.rpccnt", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%u", snnc->nfs_rpcretrans);
+	pmsprintf(buf, sizeof(buf), "%u", snnc->nfs_rpcretrans);
 	pmiPutValue("rpc.client.rpcretrans", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%u", snnc->nfs_readcnt);
+	pmsprintf(buf, sizeof(buf), "%u", snnc->nfs_readcnt);
 	pmiPutValue("nfs.client.reqs", "read", buf);
 
-	snprintf(buf, sizeof(buf), "%u", snnc->nfs_writecnt);
+	pmsprintf(buf, sizeof(buf), "%u", snnc->nfs_writecnt);
 	pmiPutValue("nfs.client.reqs", "write", buf);
 
-	snprintf(buf, sizeof(buf), "%u", snnc->nfs_accesscnt);
+	pmsprintf(buf, sizeof(buf), "%u", snnc->nfs_accesscnt);
 	pmiPutValue("nfs.client.reqs", "access", buf);
 
-	snprintf(buf, sizeof(buf), "%u", snnc->nfs_getattcnt);
+	pmsprintf(buf, sizeof(buf), "%u", snnc->nfs_getattcnt);
 	pmiPutValue("nfs.client.reqs", "getattr", buf);
 }
 
@@ -1722,37 +2015,37 @@ __print_funct_t pcp_print_net_nfsd_stats(struct activity *a, int curr)
 	struct stats_net_nfsd
 		*snndc = (struct stats_net_nfsd *) a->buf[curr];
 
-	snprintf(buf, sizeof(buf), "%u", snndc->nfsd_rpccnt);
+	pmsprintf(buf, sizeof(buf), "%u", snndc->nfsd_rpccnt);
 	pmiPutValue("rpc.server.rpccnt", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%u", snndc->nfsd_rpcbad);
+	pmsprintf(buf, sizeof(buf), "%u", snndc->nfsd_rpcbad);
 	pmiPutValue("rpc.server.rpcbadclnt", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%u", snndc->nfsd_netcnt);
+	pmsprintf(buf, sizeof(buf), "%u", snndc->nfsd_netcnt);
 	pmiPutValue("rpc.server.netcnt", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%u", snndc->nfsd_netudpcnt);
+	pmsprintf(buf, sizeof(buf), "%u", snndc->nfsd_netudpcnt);
 	pmiPutValue("rpc.server.netudpcnt", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%u", snndc->nfsd_nettcpcnt);
+	pmsprintf(buf, sizeof(buf), "%u", snndc->nfsd_nettcpcnt);
 	pmiPutValue("rpc.server.nettcpcnt", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%u", snndc->nfsd_rchits);
+	pmsprintf(buf, sizeof(buf), "%u", snndc->nfsd_rchits);
 	pmiPutValue("rpc.server.rchits", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%u", snndc->nfsd_rcmisses);
+	pmsprintf(buf, sizeof(buf), "%u", snndc->nfsd_rcmisses);
 	pmiPutValue("rpc.server.rcmisses", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%u", snndc->nfsd_readcnt);
+	pmsprintf(buf, sizeof(buf), "%u", snndc->nfsd_readcnt);
 	pmiPutValue("nfs.server.reqs", "read", buf);
 
-	snprintf(buf, sizeof(buf), "%u", snndc->nfsd_writecnt);
+	pmsprintf(buf, sizeof(buf), "%u", snndc->nfsd_writecnt);
 	pmiPutValue("nfs.server.reqs", "write", buf);
 
-	snprintf(buf, sizeof(buf), "%u", snndc->nfsd_accesscnt);
+	pmsprintf(buf, sizeof(buf), "%u", snndc->nfsd_accesscnt);
 	pmiPutValue("nfs.server.reqs", "access", buf);
 
-	snprintf(buf, sizeof(buf), "%u", snndc->nfsd_getattcnt);
+	pmsprintf(buf, sizeof(buf), "%u", snndc->nfsd_getattcnt);
 	pmiPutValue("nfs.server.reqs", "getattr", buf);
 }
 
@@ -1864,22 +2157,22 @@ __print_funct_t pcp_print_net_sock_stats(struct activity *a, int curr)
 	struct stats_net_sock
 		*snsc = (struct stats_net_sock *) a->buf[curr];
 
-	snprintf(buf, sizeof(buf), "%u", snsc->sock_inuse);
+	pmsprintf(buf, sizeof(buf), "%u", snsc->sock_inuse);
 	pmiPutValue("network.sockstat.total", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%u", snsc->tcp_inuse);
+	pmsprintf(buf, sizeof(buf), "%u", snsc->tcp_inuse);
 	pmiPutValue("network.sockstat.tcp.inuse", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%u", snsc->udp_inuse);
+	pmsprintf(buf, sizeof(buf), "%u", snsc->udp_inuse);
 	pmiPutValue("network.sockstat.udp.inuse", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%u", snsc->raw_inuse);
+	pmsprintf(buf, sizeof(buf), "%u", snsc->raw_inuse);
 	pmiPutValue("network.sockstat.raw.inuse", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%u", snsc->frag_inuse);
+	pmsprintf(buf, sizeof(buf), "%u", snsc->frag_inuse);
 	pmiPutValue("network.sockstat.frag.inuse", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%u", snsc->tcp_tw);
+	pmsprintf(buf, sizeof(buf), "%u", snsc->tcp_tw);
 	pmiPutValue("network.sockstat.tcp.tw", NULL, buf);
 }
 
@@ -1947,28 +2240,28 @@ __print_funct_t pcp_print_net_ip_stats(struct activity *a, int curr)
 	struct stats_net_ip
 		*snic = (struct stats_net_ip *) a->buf[curr];
 
-	snprintf(buf, sizeof(buf), "%llu", snic->InReceives);
+	pmsprintf(buf, sizeof(buf), "%llu", snic->InReceives);
 	pmiPutValue("network.ip.inreceives", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", snic->ForwDatagrams);
+	pmsprintf(buf, sizeof(buf), "%llu", snic->ForwDatagrams);
 	pmiPutValue("network.ip.forwdatagrams", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", snic->InDelivers);
+	pmsprintf(buf, sizeof(buf), "%llu", snic->InDelivers);
 	pmiPutValue("network.ip.indelivers", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", snic->OutRequests);
+	pmsprintf(buf, sizeof(buf), "%llu", snic->OutRequests);
 	pmiPutValue("network.ip.outrequests", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", snic->ReasmReqds);
+	pmsprintf(buf, sizeof(buf), "%llu", snic->ReasmReqds);
 	pmiPutValue("network.ip.reasmreqds", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", snic->ReasmOKs);
+	pmsprintf(buf, sizeof(buf), "%llu", snic->ReasmOKs);
 	pmiPutValue("network.ip.reasmoks", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", snic->FragOKs);
+	pmsprintf(buf, sizeof(buf), "%llu", snic->FragOKs);
 	pmiPutValue("network.ip.fragoks", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", snic->FragCreates);
+	pmsprintf(buf, sizeof(buf), "%llu", snic->FragCreates);
 	pmiPutValue("network.ip.fragcreates", NULL, buf);
 }
 
@@ -2053,28 +2346,28 @@ __print_funct_t pcp_print_net_eip_stats(struct activity *a, int curr)
 	struct stats_net_eip
 		*sneic = (struct stats_net_eip *) a->buf[curr];
 
-	snprintf(buf, sizeof(buf), "%llu", sneic->InHdrErrors);
+	pmsprintf(buf, sizeof(buf), "%llu", sneic->InHdrErrors);
 	pmiPutValue("network.ip.inhdrerrors", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", sneic->InAddrErrors);
+	pmsprintf(buf, sizeof(buf), "%llu", sneic->InAddrErrors);
 	pmiPutValue("network.ip.inaddrerrors", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", sneic->InUnknownProtos);
+	pmsprintf(buf, sizeof(buf), "%llu", sneic->InUnknownProtos);
 	pmiPutValue("network.ip.inunknownprotos", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", sneic->InDiscards);
+	pmsprintf(buf, sizeof(buf), "%llu", sneic->InDiscards);
 	pmiPutValue("network.ip.indiscards", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", sneic->OutDiscards);
+	pmsprintf(buf, sizeof(buf), "%llu", sneic->OutDiscards);
 	pmiPutValue("network.ip.outdiscards", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", sneic->OutNoRoutes);
+	pmsprintf(buf, sizeof(buf), "%llu", sneic->OutNoRoutes);
 	pmiPutValue("network.ip.outnoroutes", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", sneic->ReasmFails);
+	pmsprintf(buf, sizeof(buf), "%llu", sneic->ReasmFails);
 	pmiPutValue("network.ip.reasmfails", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", sneic->FragFails);
+	pmsprintf(buf, sizeof(buf), "%llu", sneic->FragFails);
 	pmiPutValue("network.ip.fragfails", NULL, buf);
 }
 
@@ -2160,46 +2453,46 @@ __print_funct_t pcp_print_net_icmp_stats(struct activity *a, int curr)
 	struct stats_net_icmp
 		*snic = (struct stats_net_icmp *) a->buf[curr];
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InMsgs);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InMsgs);
 	pmiPutValue("network.icmp.inmsgs", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutMsgs);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutMsgs);
 	pmiPutValue("network.icmp.outmsgs", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InEchos);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InEchos);
 	pmiPutValue("network.icmp.inechos", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InEchoReps);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InEchoReps);
 	pmiPutValue("network.icmp.inechoreps", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutEchos);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutEchos);
 	pmiPutValue("network.icmp.outechos", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutEchoReps);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutEchoReps);
 	pmiPutValue("network.icmp.outechoreps", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InTimestamps);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InTimestamps);
 	pmiPutValue("network.icmp.intimestamps", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InTimestampReps);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InTimestampReps);
 	pmiPutValue("network.icmp.intimestampreps", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutTimestamps);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutTimestamps);
 	pmiPutValue("network.icmp.outtimestamps", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutTimestampReps);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutTimestampReps);
 	pmiPutValue("network.icmp.outtimestampreps", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InAddrMasks);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InAddrMasks);
 	pmiPutValue("network.icmp.inaddrmasks", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InAddrMaskReps);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InAddrMaskReps);
 	pmiPutValue("network.icmp.inaddrmaskreps", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutAddrMasks);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutAddrMasks);
 	pmiPutValue("network.icmp.outaddrmasks", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutAddrMaskReps);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutAddrMaskReps);
 	pmiPutValue("network.icmp.outaddrmaskreps", NULL, buf);
 }
 
@@ -2321,40 +2614,40 @@ __print_funct_t pcp_print_net_eicmp_stats(struct activity *a, int curr)
 	struct stats_net_eicmp
 		*sneic = (struct stats_net_eicmp *) a->buf[curr];
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InErrors);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InErrors);
 	pmiPutValue("network.icmp.inerrors", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutErrors);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutErrors);
 	pmiPutValue("network.icmp.outerrors", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InDestUnreachs);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InDestUnreachs);
 	pmiPutValue("network.icmp.indestunreachs", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutDestUnreachs);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutDestUnreachs);
 	pmiPutValue("network.icmp.outdestunreachs", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InTimeExcds);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InTimeExcds);
 	pmiPutValue("network.icmp.intimeexcds", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutTimeExcds);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutTimeExcds);
 	pmiPutValue("network.icmp.outtimeexcds", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InParmProbs);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InParmProbs);
 	pmiPutValue("network.icmp.inparmprobs", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutParmProbs);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutParmProbs);
 	pmiPutValue("network.icmp.outparmprobs", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InSrcQuenchs);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InSrcQuenchs);
 	pmiPutValue("network.icmp.insrcquenchs", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutSrcQuenchs);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutSrcQuenchs);
 	pmiPutValue("network.icmp.outsrcquenchs", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InRedirects);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InRedirects);
 	pmiPutValue("network.icmp.inredirects", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutRedirects);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutRedirects);
 	pmiPutValue("network.icmp.outredirects", NULL, buf);
 }
 
@@ -2464,16 +2757,16 @@ __print_funct_t pcp_print_net_tcp_stats(struct activity *a, int curr)
 	struct stats_net_tcp
 		*sntc = (struct stats_net_tcp *) a->buf[curr];
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sntc->ActiveOpens);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sntc->ActiveOpens);
 	pmiPutValue("network.tcp.activeopens", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sntc->PassiveOpens);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sntc->PassiveOpens);
 	pmiPutValue("network.tcp.passiveopens", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sntc->InSegs);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sntc->InSegs);
 	pmiPutValue("network.tcp.insegs", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sntc->OutSegs);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sntc->OutSegs);
 	pmiPutValue("network.tcp.outsegs", NULL, buf);
 }
 
@@ -2535,19 +2828,19 @@ __print_funct_t pcp_print_net_etcp_stats(struct activity *a, int curr)
 	struct stats_net_etcp
 		*snetc = (struct stats_net_etcp *) a->buf[curr];
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snetc->AttemptFails);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snetc->AttemptFails);
 	pmiPutValue("network.tcp.attemptfails", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snetc->EstabResets);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snetc->EstabResets);
 	pmiPutValue("network.tcp.estabresets", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snetc->RetransSegs);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snetc->RetransSegs);
 	pmiPutValue("network.tcp.retranssegs", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snetc->InErrs);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snetc->InErrs);
 	pmiPutValue("network.tcp.inerrs", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snetc->OutRsts);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snetc->OutRsts);
 	pmiPutValue("network.tcp.outrsts", NULL, buf);
 }
 
@@ -2615,16 +2908,16 @@ __print_funct_t pcp_print_net_udp_stats(struct activity *a, int curr)
 	struct stats_net_udp
 		*snuc = (struct stats_net_udp *) a->buf[curr];
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snuc->InDatagrams);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snuc->InDatagrams);
 	pmiPutValue("network.udp.indatagrams", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snuc->OutDatagrams);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snuc->OutDatagrams);
 	pmiPutValue("network.udp.outdatagrams", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snuc->NoPorts);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snuc->NoPorts);
 	pmiPutValue("network.udp.noports", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snuc->InErrors);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snuc->InErrors);
 	pmiPutValue("network.udp.inerrors", NULL, buf);
 }
 
@@ -2686,16 +2979,16 @@ __print_funct_t pcp_print_net_sock6_stats(struct activity *a, int curr)
 	struct stats_net_sock6
 		*snsc = (struct stats_net_sock6 *) a->buf[curr];
 
-	snprintf(buf, sizeof(buf), "%u", snsc->tcp6_inuse);
+	pmsprintf(buf, sizeof(buf), "%u", snsc->tcp6_inuse);
 	pmiPutValue("network.sockstat.tcp6.inuse", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%u", snsc->udp6_inuse);
+	pmsprintf(buf, sizeof(buf), "%u", snsc->udp6_inuse);
 	pmiPutValue("network.sockstat.udp6.inuse", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%u", snsc->raw6_inuse);
+	pmsprintf(buf, sizeof(buf), "%u", snsc->raw6_inuse);
 	pmiPutValue("network.sockstat.raw6.inuse", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%u", snsc->frag6_inuse);
+	pmsprintf(buf, sizeof(buf), "%u", snsc->frag6_inuse);
 	pmiPutValue("network.sockstat.frag6.inuse", NULL, buf);
 }
 
@@ -2757,34 +3050,34 @@ __print_funct_t pcp_print_net_ip6_stats(struct activity *a, int curr)
 	struct stats_net_ip6
 		*snic = (struct stats_net_ip6 *) a->buf[curr];
 
-	snprintf(buf, sizeof(buf), "%llu", snic->InReceives6);
+	pmsprintf(buf, sizeof(buf), "%llu", snic->InReceives6);
 	pmiPutValue("network.ip6.inreceives", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", snic->OutForwDatagrams6);
+	pmsprintf(buf, sizeof(buf), "%llu", snic->OutForwDatagrams6);
 	pmiPutValue("network.ip6.outforwdatagrams", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", snic->InDelivers6);
+	pmsprintf(buf, sizeof(buf), "%llu", snic->InDelivers6);
 	pmiPutValue("network.ip6.indelivers", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", snic->OutRequests6);
+	pmsprintf(buf, sizeof(buf), "%llu", snic->OutRequests6);
 	pmiPutValue("network.ip6.outrequests", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", snic->ReasmReqds6);
+	pmsprintf(buf, sizeof(buf), "%llu", snic->ReasmReqds6);
 	pmiPutValue("network.ip6.reasmreqds", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", snic->ReasmOKs6);
+	pmsprintf(buf, sizeof(buf), "%llu", snic->ReasmOKs6);
 	pmiPutValue("network.ip6.reasmoks", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", snic->InMcastPkts6);
+	pmsprintf(buf, sizeof(buf), "%llu", snic->InMcastPkts6);
 	pmiPutValue("network.ip6.inmcastpkts", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", snic->OutMcastPkts6);
+	pmsprintf(buf, sizeof(buf), "%llu", snic->OutMcastPkts6);
 	pmiPutValue("network.ip6.outmcastpkts", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", snic->FragOKs6);
+	pmsprintf(buf, sizeof(buf), "%llu", snic->FragOKs6);
 	pmiPutValue("network.ip6.fragoks", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", snic->FragCreates6);
+	pmsprintf(buf, sizeof(buf), "%llu", snic->FragCreates6);
 	pmiPutValue("network.ip6.fragcreates", NULL, buf);
 }
 
@@ -2882,37 +3175,37 @@ __print_funct_t pcp_print_net_eip6_stats(struct activity *a, int curr)
 	struct stats_net_eip6
 		*sneic = (struct stats_net_eip6 *) a->buf[curr];
 
-	snprintf(buf, sizeof(buf), "%llu", sneic->InHdrErrors6);
+	pmsprintf(buf, sizeof(buf), "%llu", sneic->InHdrErrors6);
 	pmiPutValue("network.ip6.inhdrerrors", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", sneic->InAddrErrors6);
+	pmsprintf(buf, sizeof(buf), "%llu", sneic->InAddrErrors6);
 	pmiPutValue("network.ip6.inaddrerrors", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", sneic->InUnknownProtos6);
+	pmsprintf(buf, sizeof(buf), "%llu", sneic->InUnknownProtos6);
 	pmiPutValue("network.ip6.inunknownprotos", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", sneic->InTooBigErrors6);
+	pmsprintf(buf, sizeof(buf), "%llu", sneic->InTooBigErrors6);
 	pmiPutValue("network.ip6.intoobigerrors", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", sneic->InDiscards6);
+	pmsprintf(buf, sizeof(buf), "%llu", sneic->InDiscards6);
 	pmiPutValue("network.ip6.indiscards", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", sneic->OutDiscards6);
+	pmsprintf(buf, sizeof(buf), "%llu", sneic->OutDiscards6);
 	pmiPutValue("network.ip6.outdiscards", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", sneic->InNoRoutes6);
+	pmsprintf(buf, sizeof(buf), "%llu", sneic->InNoRoutes6);
 	pmiPutValue("network.ip6.innoroutes", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", sneic->OutNoRoutes6);
+	pmsprintf(buf, sizeof(buf), "%llu", sneic->OutNoRoutes6);
 	pmiPutValue("network.ip6.outnoroutes", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", sneic->ReasmFails6);
+	pmsprintf(buf, sizeof(buf), "%llu", sneic->ReasmFails6);
 	pmiPutValue("network.ip6.reasmfails", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", sneic->FragFails6);
+	pmsprintf(buf, sizeof(buf), "%llu", sneic->FragFails6);
 	pmiPutValue("network.ip6.fragfails", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", sneic->InTruncatedPkts6);
+	pmsprintf(buf, sizeof(buf), "%llu", sneic->InTruncatedPkts6);
 	pmiPutValue("network.ip6.intruncatedpkts", NULL, buf);
 }
 
@@ -3016,55 +3309,55 @@ __print_funct_t pcp_print_net_icmp6_stats(struct activity *a, int curr)
 	struct stats_net_icmp6
 		*snic = (struct stats_net_icmp6 *) a->buf[curr];
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InMsgs6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InMsgs6);
 	pmiPutValue("network.icmp6.inmsgs", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutMsgs6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutMsgs6);
 	pmiPutValue("network.icmp6.outmsgs", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InEchos6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InEchos6);
 	pmiPutValue("network.icmp6.inechos", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InEchoReplies6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InEchoReplies6);
 	pmiPutValue("network.icmp6.inechoreplies", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutEchoReplies6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutEchoReplies6);
 	pmiPutValue("network.icmp6.outechoreplies", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InGroupMembQueries6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InGroupMembQueries6);
 	pmiPutValue("network.icmp6.ingroupmembqueries", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InGroupMembResponses6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InGroupMembResponses6);
 	pmiPutValue("network.icmp6.ingroupmembresponses", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutGroupMembResponses6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutGroupMembResponses6);
 	pmiPutValue("network.icmp6.outgroupmembresponses", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InGroupMembReductions6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InGroupMembReductions6);
 	pmiPutValue("network.icmp6.ingroupmembreductions", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutGroupMembReductions6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutGroupMembReductions6);
 	pmiPutValue("network.icmp6.outgroupmembreductions", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InRouterSolicits6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InRouterSolicits6);
 	pmiPutValue("network.icmp6.inroutersolicits", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutRouterSolicits6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutRouterSolicits6);
 	pmiPutValue("network.icmp6.outroutersolicits", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InRouterAdvertisements6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InRouterAdvertisements6);
 	pmiPutValue("network.icmp6.inrouteradvertisements", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InNeighborSolicits6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InNeighborSolicits6);
 	pmiPutValue("network.icmp6.inneighborsolicits", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutNeighborSolicits6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutNeighborSolicits6);
 	pmiPutValue("network.icmp6.outneighborsolicits", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InNeighborAdvertisements6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InNeighborAdvertisements6);
 	pmiPutValue("network.icmp6.inneighboradvertisements", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutNeighborAdvertisements6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutNeighborAdvertisements6);
 	pmiPutValue("network.icmp6.outneighboradvertisements", NULL, buf);
 }
 
@@ -3204,37 +3497,37 @@ __print_funct_t pcp_print_net_eicmp6_stats(struct activity *a, int curr)
 	struct stats_net_eicmp6
 		*sneic = (struct stats_net_eicmp6 *) a->buf[curr];
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InErrors6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InErrors6);
 	pmiPutValue("network.icmp6.inerrors", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InDestUnreachs6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InDestUnreachs6);
 	pmiPutValue("network.icmp6.indestunreachs", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutDestUnreachs6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutDestUnreachs6);
 	pmiPutValue("network.icmp6.outdestunreachs", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InTimeExcds6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InTimeExcds6);
 	pmiPutValue("network.icmp6.intimeexcds", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutTimeExcds6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutTimeExcds6);
 	pmiPutValue("network.icmp6.outtimeexcds", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InParmProblems6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InParmProblems6);
 	pmiPutValue("network.icmp6.inparmproblems", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutParmProblems6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutParmProblems6);
 	pmiPutValue("network.icmp6.outparmproblems", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InRedirects6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InRedirects6);
 	pmiPutValue("network.icmp6.inredirects", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutRedirects6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutRedirects6);
 	pmiPutValue("network.icmp6.outredirects", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InPktTooBigs6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InPktTooBigs6);
 	pmiPutValue("network.icmp6.inpkttoobigs", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutPktTooBigs6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutPktTooBigs6);
 	pmiPutValue("network.icmp6.outpkttoobigs", NULL, buf);
 }
 
@@ -3338,16 +3631,16 @@ __print_funct_t pcp_print_net_udp6_stats(struct activity *a, int curr)
 	struct stats_net_udp6
 		*snuc = (struct stats_net_udp6 *) a->buf[curr];
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snuc->InDatagrams6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snuc->InDatagrams6);
 	pmiPutValue("network.udp6.indatagrams", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snuc->OutDatagrams6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snuc->OutDatagrams6);
 	pmiPutValue("network.udp6.outdatagrams", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snuc->NoPorts6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snuc->NoPorts6);
 	pmiPutValue("network.udp6.noports", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) snuc->InErrors6);
+	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snuc->InErrors6);
 	pmiPutValue("network.udp6.inerrors", NULL, buf);
 }
 
@@ -3426,7 +3719,7 @@ __print_funct_t pcp_print_pwr_cpufreq_stats(struct activity *a, int curr)
 			sprintf(cpuno, "cpu%d", i - 1);
 		}
 
-		snprintf(buf, sizeof(buf), "%f", ((double) spc->cpufreq) / 100);
+		pmsprintf(buf, sizeof(buf), "%f", ((double) spc->cpufreq) / 100);
 		pmiPutValue("hinv.cpu.clock", cpuno, buf);
 	}
 }
@@ -3443,12 +3736,23 @@ __print_funct_t pcp_print_pwr_cpufreq_stats(struct activity *a, int curr)
  */
 void pcp_read_pwr_cpufreq_stats(pmValueSet *values, struct activity *a, int curr)
 {
-#if 0 // TODO: per-CPU
-	switch (values->pmid) {
-		case PMID_POWER_PERCPU_CLOCK:
-			break;
+	int j, n;
+	struct stats_pwr_cpufreq *spc;
+
+	if (values->pmid != PMID_POWER_PERCPU_CLOCK)
+		return;
+
+	n = values->numval + 1;	/* slot 0 = "all" (unused), slots 1..N = per-CPU */
+	if (n > a->nr_allocated)
+		reallocate_buffers(a, n, flags);
+	a->nr[curr] = n;
+
+	for (j = 0; j < values->numval; j++) {
+		spc = (struct stats_pwr_cpufreq *) ((char *) a->buf[curr] + (j + 1) * a->msize);
+		spc->cpufreq = (unsigned long)
+			pcp_read_u64(values, j, power_cpu_metric_descs,
+				     POWER_PERCPU_CLOCK);
 	}
-#endif
 }
 
 /*
@@ -3471,15 +3775,15 @@ __print_funct_t pcp_print_pwr_fan_stats(struct activity *a, int curr)
 		spc = (struct stats_pwr_fan *) ((char *) a->buf[curr] + i * a->msize);
 		sprintf(instance, "fan%d", i + 1);
 
-		snprintf(buf, sizeof(buf), "%llu",
+		pmsprintf(buf, sizeof(buf), "%llu",
 			 (unsigned long long) spc->rpm);
 		pmiPutValue("power.fan.rpm", instance, buf);
 
-		snprintf(buf, sizeof(buf), "%llu",
+		pmsprintf(buf, sizeof(buf), "%llu",
 			 (unsigned long long) (spc->rpm - spc->rpm_min));
 		pmiPutValue("power.fan.drpm", instance, buf);
 
-		snprintf(buf, sizeof(buf), "%s", spc->device);
+		pmsprintf(buf, sizeof(buf), "%s", spc->device);
 		pmiPutValue("power.fan.device", instance, buf);
 	}
 }
@@ -3496,16 +3800,36 @@ __print_funct_t pcp_print_pwr_fan_stats(struct activity *a, int curr)
  */
 void pcp_read_power_fan_stats(pmValueSet *values, struct activity *a, int curr)
 {
-#if 0 // TODO: per-FAN
+	int j;
 	struct stats_pwr_fan *spc;
+	char *str;
 
-	switch (values->pmid) {
+	pcp_reallocate_buffers(values, a, curr);
+
+	for (j = 0; j < values->numval; j++) {
+		spc = (struct stats_pwr_fan *) ((char *) a->buf[curr] + j * a->msize);
+		switch (values->pmid) {
 		case PMID_POWER_FAN_RPM:
-		case PMID_POWER_FAN_DRPM:
-		case PMID_POWER_FAN_DEVICE:
+			spc->rpm = pcp_read_double(values, j, power_fan_metric_descs,
+						  POWER_FAN_RPM);
 			break;
+		case PMID_POWER_FAN_DRPM:
+			/* drpm = rpm - rpm_min; reconstruct rpm_min after rpm is read */
+			spc->rpm_min = spc->rpm -
+				pcp_read_double(values, j, power_fan_metric_descs,
+						POWER_FAN_DRPM);
+			break;
+		case PMID_POWER_FAN_DEVICE:
+			str = pcp_read_str(values, j, power_fan_metric_descs,
+					   POWER_FAN_DEVICE);
+			if (str) {
+				strncpy(spc->device, str, MAX_SENSORS_DEV_LEN - 1);
+				spc->device[MAX_SENSORS_DEV_LEN - 1] = '\0';
+				free(str);
+			}
+			break;
+		}
 	}
-#endif
 }
 
 /*
@@ -3528,16 +3852,16 @@ __print_funct_t pcp_print_pwr_temp_stats(struct activity *a, int curr)
 		spc = (struct stats_pwr_temp *) ((char *) a->buf[curr] + i * a->msize);
 		sprintf(instance, "temp%d", i + 1);
 
-		snprintf(buf, sizeof(buf), "%f", spc->temp);
+		pmsprintf(buf, sizeof(buf), "%f", spc->temp);
 		pmiPutValue("power.temp.celsius", instance, buf);
 
-		snprintf(buf, sizeof(buf), "%f",
+		pmsprintf(buf, sizeof(buf), "%f",
 			 (spc->temp_max - spc->temp_min) ?
 			 (spc->temp - spc->temp_min) / (spc->temp_max - spc->temp_min) * 100 :
 			 0.0);
 		pmiPutValue("power.temp.percent", instance, buf);
 
-		snprintf(buf, sizeof(buf), "%s",
+		pmsprintf(buf, sizeof(buf), "%s",
 			spc->device);
 		pmiPutValue("power.temp.device", instance, buf);
 	}
@@ -3555,16 +3879,33 @@ __print_funct_t pcp_print_pwr_temp_stats(struct activity *a, int curr)
  */
 void pcp_read_power_temp_stats(pmValueSet *values, struct activity *a, int curr)
 {
-#if 0 // TODO: per-TEMP
+	int j;
 	struct stats_pwr_temp *spc;
+	char *str;
 
-	switch (values->pmid) {
+	pcp_reallocate_buffers(values, a, curr);
+
+	for (j = 0; j < values->numval; j++) {
+		spc = (struct stats_pwr_temp *) ((char *) a->buf[curr] + j * a->msize);
+		switch (values->pmid) {
 		case PMID_POWER_TEMP_CELSIUS:
-		case PMID_POWER_TEMP_PERCENT:
-		case PMID_POWER_TEMP_DEVICE:
+			spc->temp = pcp_read_double(values, j, power_temp_metric_descs,
+						   POWER_TEMP_CELSIUS);
 			break;
+		case PMID_POWER_TEMP_PERCENT:
+			/* Derived from temp/min/max; min/max not recoverable — skip */
+			break;
+		case PMID_POWER_TEMP_DEVICE:
+			str = pcp_read_str(values, j, power_temp_metric_descs,
+					   POWER_TEMP_DEVICE);
+			if (str) {
+				strncpy(spc->device, str, MAX_SENSORS_DEV_LEN - 1);
+				spc->device[MAX_SENSORS_DEV_LEN - 1] = '\0';
+				free(str);
+			}
+			break;
+		}
 	}
-#endif
 }
 
 /*
@@ -3587,17 +3928,17 @@ __print_funct_t pcp_print_pwr_in_stats(struct activity *a, int curr)
 		spc = (struct stats_pwr_in *) ((char *) a->buf[curr] + i * a->msize);
 		sprintf(instance, "in%d", i);
 
-		snprintf(buf, sizeof(buf), "%f",
+		pmsprintf(buf, sizeof(buf), "%f",
 			 spc->in);
 		pmiPutValue("power.in.voltage", instance, buf);
 
-		snprintf(buf, sizeof(buf), "%f",
+		pmsprintf(buf, sizeof(buf), "%f",
 			 (spc->in_max - spc->in_min) ?
 			 (spc->in - spc->in_min) / (spc->in_max - spc->in_min) * 100 :
 			 0.0);
 		pmiPutValue("power.in.percent", instance, buf);
 
-		snprintf(buf, sizeof(buf), "%s",
+		pmsprintf(buf, sizeof(buf), "%s",
 			spc->device);
 		pmiPutValue("power.in.device", instance, buf);
 	}
@@ -3615,16 +3956,33 @@ __print_funct_t pcp_print_pwr_in_stats(struct activity *a, int curr)
  */
 void pcp_read_power_in_stats(pmValueSet *values, struct activity *a, int curr)
 {
-#if 0 // TODO: per-vin
+	int j;
 	struct stats_pwr_in *spc;
+	char *str;
 
-	switch (values->pmid) {
+	pcp_reallocate_buffers(values, a, curr);
+
+	for (j = 0; j < values->numval; j++) {
+		spc = (struct stats_pwr_in *) ((char *) a->buf[curr] + j * a->msize);
+		switch (values->pmid) {
 		case PMID_POWER_IN_VOLTAGE:
-		case PMID_POWER_IN_PERCENT:
-		case PMID_POWER_IN_DEVICE:
+			spc->in = pcp_read_double(values, j, power_in_metric_descs,
+						 POWER_IN_VOLTAGE);
 			break;
+		case PMID_POWER_IN_PERCENT:
+			/* Derived from in/min/max; not recoverable — skip */
+			break;
+		case PMID_POWER_IN_DEVICE:
+			str = pcp_read_str(values, j, power_in_metric_descs,
+					   POWER_IN_DEVICE);
+			if (str) {
+				strncpy(spc->device, str, MAX_SENSORS_DEV_LEN - 1);
+				spc->device[MAX_SENSORS_DEV_LEN - 1] = '\0';
+				free(str);
+			}
+			break;
+		}
 	}
-#endif
 }
 
 /*
@@ -3646,9 +4004,9 @@ __print_funct_t pcp_print_pwr_bat_stats(struct activity *a, int curr)
 
 		spbc = (struct stats_pwr_bat *) ((char *) a->buf[curr] + i * a->msize);
 
-		snprintf(bat_name, sizeof(bat_name), "BAT%d", (int) spbc->bat_id);
+		pmsprintf(bat_name, sizeof(bat_name), "BAT%d", (int) spbc->bat_id);
 
-		snprintf(buf, sizeof(buf), "%u", (unsigned int) spbc->capacity);
+		pmsprintf(buf, sizeof(buf), "%u", (unsigned int) spbc->capacity);
 		pmiPutValue("power.bat.capacity", bat_name, buf);
 
 		/* Battery status code should not be greater than or equal to BAT_STS_NR */
@@ -3656,8 +4014,7 @@ __print_funct_t pcp_print_pwr_bat_stats(struct activity *a, int curr)
 			spbc->status = 0;
 		}
 
-		//		TODO
-//		snprintf(buf, sizeof(buf), "%s", bat_status[(unsigned int) spbc->status]);
+		pmsprintf(buf, sizeof(buf), "%s", bat_status[(unsigned int) spbc->status]);
 		pmiPutValue("power.bat.status", bat_name, buf);
 	}
 }
@@ -3674,15 +4031,33 @@ __print_funct_t pcp_print_pwr_bat_stats(struct activity *a, int curr)
  */
 void pcp_read_power_bat_stats(pmValueSet *values, struct activity *a, int curr)
 {
-#if 0 // TODO: per-battery
+	int j;
 	struct stats_pwr_bat *spbc;
+	pmInDom indom = power_bat_metric_descs[0].indom;
+	char *name;
 
-	switch (values->pmid) {
+	pcp_reallocate_buffers(values, a, curr);
+
+	for (j = 0; j < values->numval; j++) {
+		spbc = (struct stats_pwr_bat *) ((char *) a->buf[curr] + j * a->msize);
+
+		/* Extract battery ID from instance name (e.g. "BAT0" → 0) */
+		if (pmNameInDom(indom, values->vlist[j].inst, &name) >= 0) {
+			sscanf(name, "BAT%hhd", &spbc->bat_id);
+			free(name);
+		}
+
+		switch (values->pmid) {
 		case PMID_POWER_BAT_CAPACITY:
-		case PMID_POWER_BAT_STATUS:
+			spbc->capacity = (char) pcp_read_u32(values, j,
+							     power_bat_metric_descs,
+							     POWER_BAT_CAPACITY);
 			break;
+		case PMID_POWER_BAT_STATUS:
+			/* Status is a string in PCP; mapping to status code is TODO */
+			break;
+		}
 	}
-#endif
 }
 
 /*
@@ -3700,16 +4075,16 @@ __print_funct_t pcp_print_huge_stats(struct activity *a, int curr)
 	struct stats_huge
 		*smc = (struct stats_huge *) a->buf[curr];
 
-	snprintf(buf, sizeof(buf), "%llu", smc->frhkb * 1024);
+	pmsprintf(buf, sizeof(buf), "%llu", smc->frhkb * 1024);
 	pmiPutValue("mem.util.hugepagesFreeBytes", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", smc->tlhkb * 1024);
+	pmsprintf(buf, sizeof(buf), "%llu", smc->tlhkb * 1024);
 	pmiPutValue("mem.util.hugepagesTotalBytes", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", smc->rsvdhkb * 1024);
+	pmsprintf(buf, sizeof(buf), "%llu", smc->rsvdhkb * 1024);
 	pmiPutValue("mem.util.hugepagesRsvdBytes", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%llu", smc->surphkb * 1024);
+	pmsprintf(buf, sizeof(buf), "%llu", smc->surphkb * 1024);
 	pmiPutValue("mem.util.hugepagesSurpBytes", NULL, buf);
 }
 
@@ -3776,22 +4151,22 @@ __print_funct_t pcp_print_pwr_usb_stats(struct activity *a, int curr)
 		suc = (struct stats_pwr_usb *) ((char *) a->buf[curr] + i * a->msize);
 		sprintf(instance, "usb%d", i);
 
-		snprintf(buf, sizeof(buf), "%u", suc->bus_nr);
+		pmsprintf(buf, sizeof(buf), "%u", suc->bus_nr);
 		pmiPutValue("power.usb.bus", instance, buf);
 
-		snprintf(buf, sizeof(buf), "%x", suc->vendor_id);
+		pmsprintf(buf, sizeof(buf), "%x", suc->vendor_id);
 		pmiPutValue("power.usb.vendorId", instance, buf);
 
-		snprintf(buf, sizeof(buf), "%x", suc->product_id);
+		pmsprintf(buf, sizeof(buf), "%x", suc->product_id);
 		pmiPutValue("power.usb.productId", instance, buf);
 
-		snprintf(buf, sizeof(buf), "%u", suc->bmaxpower << 1);
+		pmsprintf(buf, sizeof(buf), "%u", suc->bmaxpower << 1);
 		pmiPutValue("power.usb.maxpower", instance, buf);
 
-		snprintf(buf, sizeof(buf), "%s", suc->manufacturer);
+		pmsprintf(buf, sizeof(buf), "%s", suc->manufacturer);
 		pmiPutValue("power.usb.manufacturer", instance, buf);
 
-		snprintf(buf, sizeof(buf), "%s", suc->product);
+		pmsprintf(buf, sizeof(buf), "%s", suc->product);
 		pmiPutValue("power.usb.productName", instance, buf);
 	}
 }
@@ -3808,17 +4183,51 @@ __print_funct_t pcp_print_pwr_usb_stats(struct activity *a, int curr)
  */
 void pcp_read_power_usb_stats(pmValueSet *values, struct activity *a, int curr)
 {
-#if 0 // TODO: per-USB
-	switch (values->pmid) {
+	int j;
+	struct stats_pwr_usb *spu;
+	char *str;
+
+	pcp_reallocate_buffers(values, a, curr);
+
+	for (j = 0; j < values->numval; j++) {
+		spu = (struct stats_pwr_usb *) ((char *) a->buf[curr] + j * a->msize);
+		switch (values->pmid) {
 		case PMID_POWER_USB_BUS:
-		case PMID_POWER_USB_VENDORID:
-		case PMID_POWER_USB_PRODUCTID:
-		case PMID_POWER_USB_MAXPOWER:
-		case PMID_POWER_USB_MANUFACTURER:
-		case PMID_POWER_USB_PRODUCTNAME:
+			spu->bus_nr = pcp_read_u32(values, j, power_usb_metric_descs,
+						   POWER_USB_BUS);
 			break;
+		case PMID_POWER_USB_VENDORID:
+			spu->vendor_id = pcp_read_u32(values, j, power_usb_metric_descs,
+						      POWER_USB_VENDORID);
+			break;
+		case PMID_POWER_USB_PRODUCTID:
+			spu->product_id = pcp_read_u32(values, j, power_usb_metric_descs,
+						       POWER_USB_PRODUCTID);
+			break;
+		case PMID_POWER_USB_MAXPOWER:
+			spu->bmaxpower = pcp_read_u32(values, j, power_usb_metric_descs,
+						      POWER_USB_MAXPOWER);
+			break;
+		case PMID_POWER_USB_MANUFACTURER:
+			str = pcp_read_str(values, j, power_usb_metric_descs,
+					   POWER_USB_MANUFACTURER);
+			if (str) {
+				strncpy(spu->manufacturer, str, MAX_MANUF_LEN - 1);
+				spu->manufacturer[MAX_MANUF_LEN - 1] = '\0';
+				free(str);
+			}
+			break;
+		case PMID_POWER_USB_PRODUCTNAME:
+			str = pcp_read_str(values, j, power_usb_metric_descs,
+					   POWER_USB_PRODUCTNAME);
+			if (str) {
+				strncpy(spu->product, str, MAX_PROD_LEN - 1);
+				spu->product[MAX_PROD_LEN - 1] = '\0';
+				free(str);
+			}
+			break;
+		}
 	}
-#endif
 }
 
 /*
@@ -3850,31 +4259,31 @@ __print_funct_t pcp_print_filesystem_stats(struct activity *a, int curr)
 				continue;
 		}
 
-		snprintf(buf, sizeof(buf), "%llu", sfc->f_blocks / 1024);
+		pmsprintf(buf, sizeof(buf), "%llu", sfc->f_blocks / 1024);
 		pmiPutValue("filesys.capacity", dev_name, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", sfc->f_bfree / 1024);
+		pmsprintf(buf, sizeof(buf), "%llu", sfc->f_bfree / 1024);
 		pmiPutValue("filesys.free", dev_name, buf);
 
-		snprintf(buf, sizeof(buf), "%llu",
+		pmsprintf(buf, sizeof(buf), "%llu",
 			 (sfc->f_blocks - sfc->f_bfree) / 1024);
 		pmiPutValue("filesys.used", dev_name, buf);
 
-		snprintf(buf, sizeof(buf), "%f",
+		pmsprintf(buf, sizeof(buf), "%f",
 			 sfc->f_blocks ? SP_VALUE(sfc->f_bfree, sfc->f_blocks, sfc->f_blocks)
 				       : 0.0);
 		pmiPutValue("filesys.full", dev_name, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", sfc->f_files);
+		pmsprintf(buf, sizeof(buf), "%llu", sfc->f_files);
 		pmiPutValue("filesys.maxfiles", dev_name, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", sfc->f_ffree);
+		pmsprintf(buf, sizeof(buf), "%llu", sfc->f_ffree);
 		pmiPutValue("filesys.freefiles", dev_name, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", sfc->f_files - sfc->f_ffree);
+		pmsprintf(buf, sizeof(buf), "%llu", sfc->f_files - sfc->f_ffree);
 		pmiPutValue("filesys.usedfiles", dev_name, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", sfc->f_bavail / 1024);
+		pmsprintf(buf, sizeof(buf), "%llu", sfc->f_bavail / 1024);
 		pmiPutValue("filesys.avail", dev_name, buf);
 	}
 }
@@ -3891,21 +4300,56 @@ __print_funct_t pcp_print_filesystem_stats(struct activity *a, int curr)
  */
 void pcp_read_filesystem_stats(pmValueSet *values, struct activity *a, int curr)
 {
-#if 0 // TODO: per-filesystem
+	int j;
 	struct stats_filesystem *sfc;
+	pmInDom indom = filesys_metric_descs[0].indom;
+	char *name;
 
-	switch (values->pmid) {
+	pcp_reallocate_buffers(values, a, curr);
+
+	for (j = 0; j < values->numval; j++) {
+		sfc = (struct stats_filesystem *) ((char *) a->buf[curr] + j * a->msize);
+
+		/* Store the filesystem name from the PCP instance */
+		if (pmNameInDom(indom, values->vlist[j].inst, &name) >= 0) {
+			strncpy(sfc->fs_name, name, MAX_FS_LEN - 1);
+			sfc->fs_name[MAX_FS_LEN - 1] = '\0';
+			free(name);
+		}
+
+		switch (values->pmid) {
 		case PMID_FILESYS_CAPACITY:
-		case PMID_FILESYS_FREE:
-		case PMID_FILESYS_USED:
-		case PMID_FILESYS_FULL:
-		case PMID_FILESYS_MAXFILES:
-		case PMID_FILESYS_FREEFILES:
-		case PMID_FILESYS_USEDFILES:
-		case PMID_FILESYS_AVAIL:
+			/* Written as f_blocks / 1024; restore in 512-byte blocks */
+			sfc->f_blocks = pcp_read_u64(values, j, filesys_metric_descs,
+						     FILESYS_CAPACITY) * 1024;
 			break;
+		case PMID_FILESYS_FREE:
+			sfc->f_bfree = pcp_read_u64(values, j, filesys_metric_descs,
+						    FILESYS_FREE) * 1024;
+			break;
+		case PMID_FILESYS_USED:
+			/* Derived (f_blocks - f_bfree); skip to avoid overwriting */
+			break;
+		case PMID_FILESYS_FULL:
+			/* Percentage derived from blocks; skip */
+			break;
+		case PMID_FILESYS_MAXFILES:
+			sfc->f_files = pcp_read_u64(values, j, filesys_metric_descs,
+						    FILESYS_MAXFILES);
+			break;
+		case PMID_FILESYS_FREEFILES:
+			sfc->f_ffree = pcp_read_u64(values, j, filesys_metric_descs,
+						    FILESYS_FREEFILES);
+			break;
+		case PMID_FILESYS_USEDFILES:
+			/* Derived (f_files - f_ffree); skip */
+			break;
+		case PMID_FILESYS_AVAIL:
+			sfc->f_bavail = pcp_read_u64(values, j, filesys_metric_descs,
+						     FILESYS_AVAIL) * 1024;
+			break;
+		}
 	}
-#endif
 }
 
 /*
@@ -3927,16 +4371,16 @@ __print_funct_t pcp_print_fchost_stats(struct activity *a, int curr)
 
 		sfcc = (struct stats_fchost *) ((char *) a->buf[curr] + i * a->msize);
 
-		snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sfcc->f_rxframes);
+		pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sfcc->f_rxframes);
 		pmiPutValue("fchost.in.frames", sfcc->fchost_name, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sfcc->f_txframes);
+		pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sfcc->f_txframes);
 		pmiPutValue("fchost.out.frames", sfcc->fchost_name, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sfcc->f_rxwords * 4);
+		pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sfcc->f_rxwords * 4);
 		pmiPutValue("fchost.in.bytes", sfcc->fchost_name, buf);
 
-		snprintf(buf, sizeof(buf), "%llu", (unsigned long long) sfcc->f_txwords * 4);
+		pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sfcc->f_txwords * 4);
 		pmiPutValue("fchost.out.bytes", sfcc->fchost_name, buf);
 	}
 }
@@ -3953,17 +4397,46 @@ __print_funct_t pcp_print_fchost_stats(struct activity *a, int curr)
  */
 void pcp_read_fchost_stats(pmValueSet *values, struct activity *a, int curr)
 {
-#if 0 // TODO: per-fchost
+	int j;
 	struct stats_fchost *sfcc;
+	pmInDom indom = fchost_metric_descs[0].indom;
+	char *name;
 
-	switch (values->pmid) {
+	pcp_reallocate_buffers(values, a, curr);
+
+	for (j = 0; j < values->numval; j++) {
+		sfcc = (struct stats_fchost *) ((char *) a->buf[curr] + j * a->msize);
+
+		if (pmNameInDom(indom, values->vlist[j].inst, &name) >= 0) {
+			strncpy(sfcc->fchost_name, name, MAX_FCH_LEN - 1);
+			sfcc->fchost_name[MAX_FCH_LEN - 1] = '\0';
+			free(name);
+		}
+
+		switch (values->pmid) {
 		case PMID_FCHOST_INFRAMES:
-		case PMID_FCHOST_OUTFRAMES:
-		case PMID_FCHOST_INBYTES:
-		case PMID_FCHOST_OUTBYTES:
+			sfcc->f_rxframes = (unsigned long)
+				pcp_read_u64(values, j, fchost_metric_descs,
+					     FCHOST_INFRAMES);
 			break;
+		case PMID_FCHOST_OUTFRAMES:
+			sfcc->f_txframes = (unsigned long)
+				pcp_read_u64(values, j, fchost_metric_descs,
+					     FCHOST_OUTFRAMES);
+			break;
+		case PMID_FCHOST_INBYTES:
+			/* Written as f_rxwords * 4; restore words */
+			sfcc->f_rxwords = (unsigned long)
+				pcp_read_u64(values, j, fchost_metric_descs,
+					     FCHOST_INBYTES) / 4;
+			break;
+		case PMID_FCHOST_OUTBYTES:
+			sfcc->f_txwords = (unsigned long)
+				pcp_read_u64(values, j, fchost_metric_descs,
+					     FCHOST_OUTBYTES) / 4;
+			break;
+		}
 	}
-#endif
 }
 
 /*
@@ -3981,16 +4454,16 @@ __print_funct_t pcp_print_psicpu_stats(struct activity *a, int curr)
 	struct stats_psi_cpu
 		*psic = (struct stats_psi_cpu *) a->buf[curr];
 
-	snprintf(buf, sizeof(buf), "%f", (double) psic->some_acpu_10 / 100);
+	pmsprintf(buf, sizeof(buf), "%f", (double) psic->some_acpu_10 / 100);
 	pmiPutValue("kernel.all.pressure.cpu.some.avg", "10 second", buf);
 
-	snprintf(buf, sizeof(buf), "%f", (double) psic->some_acpu_60 / 100);
+	pmsprintf(buf, sizeof(buf), "%f", (double) psic->some_acpu_60 / 100);
 	pmiPutValue("kernel.all.pressure.cpu.some.avg", "1 minute", buf);
 
-	snprintf(buf, sizeof(buf), "%f", (double) psic->some_acpu_300 / 100);
+	pmsprintf(buf, sizeof(buf), "%f", (double) psic->some_acpu_300 / 100);
 	pmiPutValue("kernel.all.pressure.cpu.some.avg", "5 minute", buf);
 
-	snprintf(buf, sizeof(buf), "%llu", psic->some_cpu_total);
+	pmsprintf(buf, sizeof(buf), "%llu", psic->some_cpu_total);
 	pmiPutValue("kernel.all.pressure.cpu.some.total", NULL, buf);
 }
 
@@ -4063,28 +4536,28 @@ __print_funct_t pcp_print_psiio_stats(struct activity *a, int curr)
 	struct stats_psi_io
 		*psic = (struct stats_psi_io *) a->buf[curr];
 
-	snprintf(buf, sizeof(buf), "%f", (double) psic->some_aio_10 / 100);
+	pmsprintf(buf, sizeof(buf), "%f", (double) psic->some_aio_10 / 100);
 	pmiPutValue("kernel.all.pressure.io.some.avg", "10 second", buf);
 
-	snprintf(buf, sizeof(buf), "%f", (double) psic->some_aio_60 / 100);
+	pmsprintf(buf, sizeof(buf), "%f", (double) psic->some_aio_60 / 100);
 	pmiPutValue("kernel.all.pressure.io.some.avg", "1 minute", buf);
 
-	snprintf(buf, sizeof(buf), "%f", (double) psic->some_aio_300 / 100);
+	pmsprintf(buf, sizeof(buf), "%f", (double) psic->some_aio_300 / 100);
 	pmiPutValue("kernel.all.pressure.io.some.avg", "5 minute", buf);
 
-	snprintf(buf, sizeof(buf), "%llu", psic->some_io_total);
+	pmsprintf(buf, sizeof(buf), "%llu", psic->some_io_total);
 	pmiPutValue("kernel.all.pressure.io.some.total", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%f", (double) psic->full_aio_10 / 100);
+	pmsprintf(buf, sizeof(buf), "%f", (double) psic->full_aio_10 / 100);
 	pmiPutValue("kernel.all.pressure.io.full.avg", "10 second", buf);
 
-	snprintf(buf, sizeof(buf), "%f", (double) psic->full_aio_60 / 100);
+	pmsprintf(buf, sizeof(buf), "%f", (double) psic->full_aio_60 / 100);
 	pmiPutValue("kernel.all.pressure.io.full.avg", "1 minute", buf);
 
-	snprintf(buf, sizeof(buf), "%f", (double) psic->full_aio_300 / 100);
+	pmsprintf(buf, sizeof(buf), "%f", (double) psic->full_aio_300 / 100);
 	pmiPutValue("kernel.all.pressure.io.full.avg", "5 minute", buf);
 
-	snprintf(buf, sizeof(buf), "%llu", psic->full_io_total);
+	pmsprintf(buf, sizeof(buf), "%llu", psic->full_io_total);
 	pmiPutValue("kernel.all.pressure.io.full.total", NULL, buf);
 }
 
@@ -4191,28 +4664,28 @@ __print_funct_t pcp_print_psimem_stats(struct activity *a, int curr)
 	struct stats_psi_mem
 		*psic = (struct stats_psi_mem *) a->buf[curr];
 
-	snprintf(buf, sizeof(buf), "%f", (double) psic->some_amem_10 / 100);
+	pmsprintf(buf, sizeof(buf), "%f", (double) psic->some_amem_10 / 100);
 	pmiPutValue("kernel.all.pressure.memory.some.avg", "10 second", buf);
 
-	snprintf(buf, sizeof(buf), "%f", (double) psic->some_amem_60 / 100);
+	pmsprintf(buf, sizeof(buf), "%f", (double) psic->some_amem_60 / 100);
 	pmiPutValue("kernel.all.pressure.memory.some.avg", "1 minute", buf);
 
-	snprintf(buf, sizeof(buf), "%f", (double) psic->some_amem_300 / 100);
+	pmsprintf(buf, sizeof(buf), "%f", (double) psic->some_amem_300 / 100);
 	pmiPutValue("kernel.all.pressure.memory.some.avg", "5 minute", buf);
 
-	snprintf(buf, sizeof(buf), "%llu", psic->some_mem_total);
+	pmsprintf(buf, sizeof(buf), "%llu", psic->some_mem_total);
 	pmiPutValue("kernel.all.pressure.memory.some.total", NULL, buf);
 
-	snprintf(buf, sizeof(buf), "%f", (double) psic->full_amem_10 / 100);
+	pmsprintf(buf, sizeof(buf), "%f", (double) psic->full_amem_10 / 100);
 	pmiPutValue("kernel.all.pressure.memory.full.avg", "10 second", buf);
 
-	snprintf(buf, sizeof(buf), "%f", (double) psic->full_amem_60 / 100);
+	pmsprintf(buf, sizeof(buf), "%f", (double) psic->full_amem_60 / 100);
 	pmiPutValue("kernel.all.pressure.memory.full.avg", "1 minute", buf);
 
-	snprintf(buf, sizeof(buf), "%f", (double) psic->full_amem_300 / 100);
+	pmsprintf(buf, sizeof(buf), "%f", (double) psic->full_amem_300 / 100);
 	pmiPutValue("kernel.all.pressure.memory.full.avg", "5 minute", buf);
 
-	snprintf(buf, sizeof(buf), "%llu", psic->full_mem_total);
+	pmsprintf(buf, sizeof(buf), "%llu", psic->full_mem_total);
 	pmiPutValue("kernel.all.pressure.memory.full.total", NULL, buf);
 }
 
