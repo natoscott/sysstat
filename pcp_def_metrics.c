@@ -47,7 +47,7 @@ void act_add_metric(struct activity *a, int metric)
 	const char *name;
 	pmDesc *desc;
 
-	if (!metrics || metrics->count > metric)
+	if (!metrics || (size_t)metric >= metrics->count)
 		PANIC(EINVAL);
 
 	name = metrics->names[metric];
@@ -71,7 +71,7 @@ void act_add_instance(struct activity *a, int metric, char *name, int inst)
 	struct act_metrics *metrics = a->metrics;
 	pmDesc *desc;
 
-	if (!metrics || metrics->count > metric)
+	if (!metrics || (size_t)metric >= metrics->count)
 		PANIC(EINVAL);
 
 	desc = &metrics->descs[metric];
@@ -203,7 +203,15 @@ void pcp_def_percpu_intr_instances(struct activity *a, int cpu)
  */
 void pcp_def_percpu_intr_metrics(struct activity *a, int cpu)
 {
-	act_add_metric(a, CPU_PERCPU_INTERRUPTS);
+	/*
+	 * kernel.percpu.interrupts is part of the CPU metric group, not the IRQ
+	 * group.  Call pmiAddMetric directly rather than via act_add_metric which
+	 * would incorrectly index into the calling activity's (IRQ) metrics table.
+	 */
+	pmiAddMetric("kernel.percpu.interrupts",
+		     PMID_CPU_PERCPU_INTERRUPTS, PM_TYPE_U32,
+		     PMI_INDOM(60, 0), PM_SEM_COUNTER,
+		     pmiUnits(0, 0, 1, 0, 0, PM_COUNT_ONE));
 }
 
 /*
@@ -266,8 +274,14 @@ void pcp_def_percpu_instance(struct activity *a, int cpu)
 {
 	char buf[32];
 
+	/*
+	 * All per-CPU sysstat activities use the standard Linux per-CPU
+	 * instance domain PMI_INDOM(60, 0).  Add the instance directly
+	 * rather than routing through act_add_instance, which requires
+	 * a valid per-CPU metric index in the calling activity's table.
+	 */
 	pmsprintf(buf, sizeof(buf), "cpu%d", cpu);
-	act_add_instance(a, CPU_PERCPU_USER, buf, cpu);
+	pmiAddInstance(PMI_INDOM(60, 0), buf, cpu);
 }
 
 /*
@@ -331,14 +345,20 @@ void pcp_def_cpu_metrics(struct activity *a)
 {
 	int i, first = TRUE;
 
-	for (i = 0; (i < a->nr_ini) && (i < a->bitmap->b_size + 1); i++) {
+	for (i = 0; (i < a->nr_ini) &&
+		    (a->bitmap == NULL || a->bitmap->b_array == NULL ||
+		     i < a->bitmap->b_size + 1); i++) {
 
 		/*
 		 * Should current CPU (including CPU "all") be displayed?
+		 * When bitmap or b_array is NULL (e.g. called from sadc to
+		 * define archive metrics before allocate_bitmaps() runs),
+		 * include all CPUs without filtering.
 		 * NB: Offline not tested (they may be turned off and on within
 		 * the same file).
 		 */
-		if (!IS_CPU_SELECTED(a->bitmap->b_array, i))
+		if (a->bitmap != NULL && a->bitmap->b_array != NULL &&
+		    !IS_CPU_SELECTED(a->bitmap->b_array, i))
 			/* CPU not selected */
 			continue;
 
@@ -363,7 +383,7 @@ void pcp_def_cpu_metrics(struct activity *a)
 			}
 
 			else if (first) {
-				/* Create instance for current CPU. */
+				/* First individual CPU: create instance AND metrics. */
 				pcp_def_percpu_instance(a, i - 1);
 
 				if (a->id == A_CPU) {
@@ -383,6 +403,11 @@ void pcp_def_cpu_metrics(struct activity *a)
 
 				first = FALSE;
 			}
+
+			else {
+				/* Subsequent CPUs: instance only (metrics already registered). */
+				pcp_def_percpu_instance(a, i - 1);
+			}
 		}
 	}
 }
@@ -393,9 +418,10 @@ const char *cpu_metric_names[] = {
 	[CPU_ALLCPU_NICE] = "kernel.all.cpu.nice",
 	[CPU_ALLCPU_IDLE] = "kernel.all.cpu.idle",
 	[CPU_ALLCPU_WAITTOTAL] = "kernel.all.cpu.wait.total",
-	[CPU_ALLCPU_IRQTOTAL] = "kernel.all.intr",
+	[CPU_ALLCPU_IRQTOTAL] = "kernel.all.cpu.irq.total",
 	[CPU_ALLCPU_IRQSOFT] = "kernel.all.cpu.irq.soft",
 	[CPU_ALLCPU_IRQHARD] = "kernel.all.cpu.irq.hard",
+	[CPU_ALLCPU_STEAL] = "kernel.all.cpu.steal",
 	[CPU_ALLCPU_GUEST] = "kernel.all.cpu.guest",
 	[CPU_ALLCPU_GUESTNICE] = "kernel.all.cpu.guest_nice",
 	[CPU_PERCPU_USER] = "kernel.percpu.cpu.user",
@@ -403,7 +429,7 @@ const char *cpu_metric_names[] = {
 	[CPU_PERCPU_SYS] = "kernel.percpu.cpu.sys",
 	[CPU_PERCPU_IDLE] = "kernel.percpu.cpu.idle",
 	[CPU_PERCPU_WAITTOTAL] = "kernel.percpu.cpu.wait.total",
-	[CPU_PERCPU_IRQTOTAL] = "kernel.percpu.intr",
+	[CPU_PERCPU_IRQTOTAL] = "kernel.percpu.cpu.irq.total",
 	[CPU_PERCPU_IRQSOFT] = "kernel.percpu.cpu.irq.soft",
 	[CPU_PERCPU_IRQHARD] = "kernel.percpu.cpu.irq.hard",
 	[CPU_PERCPU_STEAL] = "kernel.percpu.cpu.steal",
@@ -567,8 +593,13 @@ pmDesc cpu_metric_descs[] = {
 		.sem = PM_SEM_COUNTER,
 	},
 	[CPU_PERCPU_INTERRUPTS] = {
+		/*
+		 * Written per-CPU using the standard per-CPU indom (60,0) with
+		 * "cpuN" instances.  Represents the total interrupt count for
+		 * each CPU; the per-interrupt-line breakdown is in pcp_print_irq_stats.
+		 */
 		.pmid = PMID_CPU_PERCPU_INTERRUPTS,
-		.indom = PMI_INDOM(60, 40),
+		.indom = PMI_INDOM(60, 0),
 		.units = PMI_UNITS(0, 0, 1, 0, 0, PM_COUNT_ONE),
 		.type = PM_TYPE_U32,
 		.sem = PM_SEM_COUNTER,
@@ -769,7 +800,8 @@ void pcp_def_irq_metrics(struct activity *a)
 	int first = TRUE, inst = 0;
 	struct sa_item *list;
 
-	if (!(a->bitmap->b_array[0] & 1))
+	if (a->bitmap != NULL && a->bitmap->b_array != NULL &&
+	    !(a->bitmap->b_array[0] & 1))
 		/* CPU "all" not selected: Nothing to do here */
 		return;
 

@@ -36,6 +36,13 @@
 #include "version.h"
 #include "sa.h"
 
+#ifdef HAVE_PCP
+#include <pcp/pmapi.h>
+#include <pcp/import.h>
+#include "pcp_stats.h"
+#include "pcp_def_metrics.h"
+#endif
+
 #ifdef USE_NLS
 #include <locale.h>
 #include <libintl.h>
@@ -63,6 +70,48 @@ extern char *tzname[2];
 
 long interval = -1;
 uint64_t flags = 0;
+
+#ifdef HAVE_PCP
+/* PCP archive base path (without extension, derived from safile or explicit) */
+char pcp_archive[MAX_FILE_LEN] = "";
+
+/*
+ * Derive the PCP archive base path from the native sa file path, following
+ * the agreed naming convention:
+ *
+ *   /var/log/sa/sa27        ->  /var/log/sa/pcp27/pcp27
+ *   /var/log/sa/sa20260527  ->  /var/log/sa/pcp20260527/pcp20260527
+ *
+ * Creates the daily PCP directory if it does not already exist.
+ * Writes the result into @out (length @len).
+ */
+static void
+set_pcp_default_archive(const char *safile, char *out, size_t len)
+{
+	char dir[MAX_FILE_LEN], pcp_dir[MAX_FILE_LEN];
+	const char *base, *datefrag, *slash;
+
+	slash = strrchr(safile, '/');
+	if (slash) {
+		strncpy(dir, safile, slash - safile);
+		dir[slash - safile] = '\0';
+		base = slash + 1;
+	} else {
+		strcpy(dir, ".");
+		base = safile;
+	}
+
+	/* Strip leading "sa" from basename to get the date fragment */
+	datefrag = (strncmp(base, "sa", 2) == 0) ? base + 2 : base;
+
+	/* /var/log/sa/pcp<DD>/ */
+	snprintf(pcp_dir, sizeof(pcp_dir), "%s/pcp%s", dir, datefrag);
+	mkdir(pcp_dir, 0755);	/* harmless if already exists */
+
+	/* Archive base: /var/log/sa/pcp<DD>/pcp<DD> */
+	snprintf(out, len, "%s/pcp%s", pcp_dir, datefrag);
+}
+#endif /* HAVE_PCP */
 
 int optz = 0;
 char timestamp[2][TIMESTAMP_LEN];
@@ -99,6 +148,7 @@ void usage(char *progname)
 
 	fprintf(stderr, _("Options are:\n"
 			  "[ -C <comment> ] [ -D ] [ -F ] [ -f ] [ -L ] [ -V ]\n"
+			  "[ -O pcp[=<archive>] ] [ -O pcp-only[=<archive>] ]\n"
 			  "[ -S { INT | DISK | IPV6 | POWER | SNMP | XDISK | ALL | XALL } ]\n"));
 	exit(1);
 }
@@ -1112,9 +1162,39 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 			flags = save_flags;
 		}
 
-		/* If the record type was R_LAST_STATS, tag it R_STATS before writing it */
+		/* If the record type was R_LAST_STATS, tag it R_STATS before writing */
 		record_hdr.record_type = R_STATS;
-		if (ofile[0]) {
+
+		/*
+		 * Write PCP archive FIRST so the native .sa file ends up with
+		 * a more-recent mtime — sar/sadf use mtime to auto-select the
+		 * most recent file when no explicit filename is given.
+		 */
+#ifdef HAVE_PCP
+		if (WRITE_PCP_OUTPUT(flags)) {
+			int	p;
+
+			for (p = 0; p < NR_ACT; p++) {
+				if (!IS_COLLECTED(act[p]->options) ||
+				    !act[p]->f_pcp_print)
+					continue;
+				(*act[p]->f_pcp_print)(act[p], 0);
+			}
+			{
+				int __sts = pmiWrite((int) record_hdr.ust_time, 0);
+				if (__sts < 0) {
+					fprintf(stderr, _("PCP write error: %s\n"),
+						pmiErrStr(__sts));
+					if (WRITE_PCP_ONLY(flags))
+						exit(4);
+					flags &= ~S_F_PCP_OUTPUT;
+				}
+			}
+		}
+#endif /* HAVE_PCP */
+
+		/* Then write native sysstat format (skipped in pcp-only mode) */
+		if (ofile[0] && !WRITE_PCP_ONLY(flags)) {
 			write_stats(ofd);
 		}
 
@@ -1152,8 +1232,32 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 				setup_file_hdr(stdfd);
 			}
 
-			/* Write stats to file again */
-			write_stats(ofd);
+#ifdef HAVE_PCP
+			/*
+			 * On rotation: end the old PCP archive and start a new
+			 * one aligned to the new day's pcpDD/ directory, then
+			 * write the first record of the new day to PCP first.
+			 */
+			if (WRITE_PCP_OUTPUT(flags)) {
+				int p;
+
+				pmiEnd();
+				set_pcp_default_archive(ofile, pcp_archive,
+							sizeof(pcp_archive));
+				pmiStart(pcp_archive, PMI_APPEND);
+				for (p = 0; p < NR_ACT; p++) {
+					if (!IS_COLLECTED(act[p]->options) ||
+					    !act[p]->f_pcp_print)
+						continue;
+					(*act[p]->f_pcp_print)(act[p], 0);
+				}
+				pmiWrite((int) record_hdr.ust_time, 0);
+			}
+#endif /* HAVE_PCP */
+
+			/* Write stats to native file (skipped in pcp-only mode) */
+			if (!WRITE_PCP_ONLY(flags))
+				write_stats(ofd);
 		}
 
 		/* Flush data */
@@ -1198,6 +1302,10 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 	/* Close file descriptors if they have actually been used */
 	CLOSE(stdfd);
 	CLOSE(ofd);
+#ifdef HAVE_PCP
+	if (WRITE_PCP_OUTPUT(flags))
+		pmiEnd();
+#endif
 }
 
 /*
@@ -1273,6 +1381,44 @@ int main(int argc, char **argv)
 		else if (!strcmp(argv[opt], "-f")) {
 			flags |= S_F_FDATASYNC;
 		}
+
+#ifdef HAVE_PCP
+		else if (!strncmp(argv[opt], "-O", 2)) {
+			/*
+			 * -O pcp[=<archive>]
+			 *   Write PCP archive AND native sysstat format.
+			 *   PCP error is non-fatal; sadc falls back to native.
+			 *
+			 * -O pcp-only[=<archive>]
+			 *   Write PCP archive ONLY (no native .sa file).
+			 *   PCP error is fatal.
+			 *
+			 * Archive path defaults to /var/log/sa/pcpDD/pcpDD
+			 * derived from the output file; override with =<path>.
+			 */
+			const char *val = argv[opt] + 2;
+			if (!*val) {
+				if (!argv[++opt])
+					usage(argv[0]);
+				val = argv[opt];
+			}
+			if (!strncmp(val, "pcp-only", 8)) {
+				flags |= S_F_PCP_OUTPUT | S_F_PCP_ONLY;
+				if (val[8] == '=')
+					snprintf(pcp_archive, sizeof(pcp_archive),
+						 "%s", val + 9);
+			}
+			else if (!strncmp(val, "pcp", 3)) {
+				flags |= S_F_PCP_OUTPUT;
+				if (val[3] == '=')
+					snprintf(pcp_archive, sizeof(pcp_archive),
+						 "%s", val + 4);
+			}
+			else {
+				usage(argv[0]);
+			}
+		}
+#endif
 
 		else if (!strcmp(argv[opt], "-C")) {
 			if (!argv[++opt]) {
@@ -1408,6 +1554,254 @@ int main(int argc, char **argv)
 	 */
 	open_ofile(&ofd, ofile, restart_mark);
 	open_stdout(&stdfd);
+
+#ifdef HAVE_PCP
+	if (WRITE_PCP_OUTPUT(flags)) {
+		int	p, sts;
+
+		/*
+		 * Allocate and select-all bitmaps so that pcp_print_*_stats()
+		 * — which are display functions that filter by bitmap — will
+		 * write data for all collected CPUs, IRQs, etc.
+		 */
+		allocate_bitmaps(act);
+		for (p = 0; p < NR_ACT; p++) {
+			if (act[p]->bitmap && act[p]->bitmap->b_array)
+				memset(act[p]->bitmap->b_array, ~0,
+				       BITMAP_SIZE(act[p]->bitmap->b_size));
+		}
+
+		/*
+		 * If no explicit PCP archive path was given, derive it from
+		 * the .sa output path using the pcpDD/pcpDD convention.
+		 */
+		if (!pcp_archive[0]) {
+			if (ofile[0])
+				set_pcp_default_archive(ofile, pcp_archive,
+							sizeof(pcp_archive));
+			else
+				/* No output file (stdout only) — use today's default */
+				set_pcp_default_archive("/var/log/sa/sa00",
+							pcp_archive,
+							sizeof(pcp_archive));
+		}
+
+		/*
+		 * PMI_APPEND falls back silently to creating a new archive
+		 * when the files don't yet exist, so use it unconditionally.
+		 */
+		sts = pmiStart(pcp_archive, PMI_APPEND);
+		if (sts < 0) {
+			fprintf(stderr,
+				_("Cannot open PCP archive %s: %s\n"),
+				pcp_archive, pmiErrStr(sts));
+			if (WRITE_PCP_ONLY(flags))
+				exit(4);	/* fatal in pcp-only mode */
+			flags &= ~S_F_PCP_OUTPUT;
+			goto pcp_init_done;
+		}
+
+		pmiSetHostname(file_hdr.sa_nodename);
+		pmiSetTimezone(file_hdr.sa_tzname);
+
+		/*
+		 * Set S_F_SINCE_BOOT so that get_global_cpu_statistics() does
+		 * not mark per-CPU data as "offline" simply because the previous
+		 * sample buffer (buf[1]) is empty — which is always true in sadc
+		 * since it only maintains a single sample buffer.
+		 */
+		flags |= S_F_SINCE_BOOT;
+
+		/*
+		 * Register and pre-stage the file header metrics that sar
+		 * reads to print the report header (CPU count, uname info).
+		 * These will be written to the archive on the first pmiWrite.
+		 * They mirror what sadf writes in its F_BEGIN handler.
+		 */
+		{
+			char hbuf[64];
+
+			pmiAddMetric("hinv.ncpu",
+				     pmiID(60, 0, 32), PM_TYPE_U32,
+				     PM_INDOM_NULL, PM_SEM_DISCRETE,
+				     pmiUnits(0, 0, 0, 0, 0, 0));
+			pmsprintf(hbuf, sizeof(hbuf), "%u",
+				  file_hdr.sa_cpu_nr > 1 ?
+				  file_hdr.sa_cpu_nr - 1 : 1);
+			pmiPutValue("hinv.ncpu", NULL, hbuf);
+
+			pmiAddMetric("kernel.uname.sysname",
+				     pmiID(60, 12, 2), PM_TYPE_STRING,
+				     PM_INDOM_NULL, PM_SEM_DISCRETE,
+				     pmiUnits(0, 0, 0, 0, 0, 0));
+			pmiPutValue("kernel.uname.sysname", NULL,
+				    file_hdr.sa_sysname);
+
+			pmiAddMetric("kernel.uname.release",
+				     pmiID(60, 12, 0), PM_TYPE_STRING,
+				     PM_INDOM_NULL, PM_SEM_DISCRETE,
+				     pmiUnits(0, 0, 0, 0, 0, 0));
+			pmiPutValue("kernel.uname.release", NULL,
+				    file_hdr.sa_release);
+
+			pmiAddMetric("kernel.uname.machine",
+				     pmiID(60, 12, 3), PM_TYPE_STRING,
+				     PM_INDOM_NULL, PM_SEM_DISCRETE,
+				     pmiUnits(0, 0, 0, 0, 0, 0));
+			pmiPutValue("kernel.uname.machine", NULL,
+				    file_hdr.sa_machine);
+
+			pmiAddMetric("kernel.uname.nodename",
+				     pmiID(60, 12, 4), PM_TYPE_STRING,
+				     PM_INDOM_NULL, PM_SEM_DISCRETE,
+				     pmiUnits(0, 0, 0, 0, 0, 0));
+			pmiPutValue("kernel.uname.nodename", NULL,
+				    file_hdr.sa_nodename);
+		}
+
+		/*
+		 * pcp_print_*_stats() functions access both buf[0] (current)
+		 * and buf[1] (previous sample).  sa_sys_init() only allocates
+		 * buf[0] via _buf0.  Allocate all three buffers now so the
+		 * display functions don't crash on a NULL buf[1].
+		 * buf[1] stays zeroed (no previous sample on first write).
+		 */
+		for (p = 0; p < NR_ACT; p++) {
+			if (!IS_COLLECTED(act[p]->options) || act[p]->nr_ini <= 0)
+				continue;
+			reallocate_buffers(act[p], act[p]->nr_ini, flags);
+		}
+
+		/* Register metrics for all collected activities */
+		for (p = 0; p < NR_ACT; p++) {
+			if (!IS_COLLECTED(act[p]->options))
+				continue;
+
+			switch (act[p]->id) {
+			case A_CPU:
+			case A_PWR_CPU:
+			case A_NET_SOFT:
+				pcp_def_cpu_metrics(act[p]);
+				break;
+			case A_PCSW:
+				pcp_def_pcsw_metrics(act[p]);
+				break;
+			case A_IRQ:
+				pcp_def_irq_metrics(act[p]);
+				pcp_def_cpu_metrics(act[p]);	/* per-CPU interrupt metrics */
+				break;
+			case A_SWAP:
+				pcp_def_swap_metrics(act[p]);
+				break;
+			case A_PAGE:
+				pcp_def_paging_metrics(act[p]);
+				break;
+			case A_IO:
+				pcp_def_io_metrics(act[p]);
+				break;
+			case A_MEMORY:
+				pcp_def_memory_metrics(act[p]);
+				break;
+			case A_KTABLES:
+				pcp_def_ktables_metrics(act[p]);
+				break;
+			case A_QUEUE:
+				pcp_def_queue_metrics(act[p]);
+				break;
+			case A_SERIAL:
+				pcp_def_serial_metrics(act[p]);
+				break;
+			case A_DISK:
+				pcp_def_disk_metrics(act[p]);
+				break;
+			case A_NET_DEV:
+			case A_NET_EDEV:
+				pcp_def_net_dev_metrics(act[p]);
+				break;
+			case A_NET_NFS:
+				pcp_def_net_nfs_metrics(act[p]);
+				break;
+			case A_NET_NFSD:
+				pcp_def_net_nfsd_metrics(act[p]);
+				break;
+			case A_NET_SOCK:
+				pcp_def_net_sock_metrics(act[p]);
+				break;
+			case A_NET_IP:
+				pcp_def_net_ip_metrics(act[p]);
+				break;
+			case A_NET_EIP:
+				pcp_def_net_eip_metrics(act[p]);
+				break;
+			case A_NET_ICMP:
+				pcp_def_net_icmp_metrics(act[p]);
+				break;
+			case A_NET_EICMP:
+				pcp_def_net_eicmp_metrics(act[p]);
+				break;
+			case A_NET_TCP:
+				pcp_def_net_tcp_metrics(act[p]);
+				break;
+			case A_NET_ETCP:
+				pcp_def_net_etcp_metrics(act[p]);
+				break;
+			case A_NET_UDP:
+				pcp_def_net_udp_metrics(act[p]);
+				break;
+			case A_NET_SOCK6:
+				pcp_def_net_sock6_metrics(act[p]);
+				break;
+			case A_NET_IP6:
+				pcp_def_net_ip6_metrics(act[p]);
+				break;
+			case A_NET_EIP6:
+				pcp_def_net_eip6_metrics(act[p]);
+				break;
+			case A_NET_ICMP6:
+				pcp_def_net_icmp6_metrics(act[p]);
+				break;
+			case A_NET_EICMP6:
+				pcp_def_net_eicmp6_metrics(act[p]);
+				break;
+			case A_NET_UDP6:
+				pcp_def_net_udp6_metrics(act[p]);
+				break;
+			case A_HUGE:
+				pcp_def_huge_metrics(act[p]);
+				break;
+			case A_PWR_FAN:
+				pcp_def_pwr_fan_metrics(act[p]);
+				break;
+			case A_PWR_TEMP:
+				pcp_def_pwr_temp_metrics(act[p]);
+				break;
+			case A_PWR_IN:
+				pcp_def_pwr_in_metrics(act[p]);
+				break;
+			case A_PWR_BAT:
+				pcp_def_pwr_bat_metrics(act[p]);
+				break;
+			case A_PWR_USB:
+				pcp_def_pwr_usb_metrics(act[p]);
+				break;
+			case A_FS:
+				pcp_def_filesystem_metrics(act[p]);
+				break;
+			case A_NET_FC:
+				pcp_def_fchost_metrics(act[p]);
+				break;
+			case A_PSI_CPU:
+			case A_PSI_IO:
+			case A_PSI_MEM:
+				pcp_def_psi_metrics(act[p]);
+				break;
+			default:
+				break;
+			}
+		}
+pcp_init_done:	;
+	}
+#endif /* HAVE_PCP */
 
 	if (interval < 0) {
 		if (ofd >= 0) {

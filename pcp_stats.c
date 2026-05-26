@@ -241,13 +241,14 @@ __print_funct_t pcp_print_cpu_stats(struct activity *a, int curr)
 				pmiPutValue("kernel.percpu.cpu.user", cpuno, "0");
 				pmiPutValue("kernel.percpu.cpu.nice", cpuno, "0");
 				pmiPutValue("kernel.percpu.cpu.sys", cpuno, "0");
-				pmiPutValue("kernel.percpu.cpu.iowait", cpuno, "0");
+				pmiPutValue("kernel.percpu.cpu.wait.total", cpuno, "0");
 				pmiPutValue("kernel.percpu.cpu.steal", cpuno, "0");
-				pmiPutValue("kernel.percpu.cpu.hardirq", cpuno, "0");
-				pmiPutValue("kernel.percpu.cpu.softirq", cpuno, "0");
+				pmiPutValue("kernel.percpu.cpu.irq.hard", cpuno, "0");
+				pmiPutValue("kernel.percpu.cpu.irq.soft", cpuno, "0");
 				pmiPutValue("kernel.percpu.cpu.guest", cpuno, "0");
 				pmiPutValue("kernel.percpu.cpu.guest_nice", cpuno, "0");
 				pmiPutValue("kernel.percpu.cpu.idle", cpuno, "100");
+				pmiPutValue("kernel.percpu.interrupts", cpuno, "0");
 
 				continue;
 			}
@@ -263,7 +264,7 @@ __print_funct_t pcp_print_cpu_stats(struct activity *a, int curr)
 		pmiPutValue(i ? "kernel.percpu.cpu.sys" : "kernel.all.cpu.sys", str, buf);
 
 		pmsprintf(buf, sizeof(buf), "%llu", scc->cpu_iowait);
-		pmiPutValue(i ? "kernel.percpu.cpu.iowait" : "kernel.all.cpu.iowait", str, buf);
+		pmiPutValue(i ? "kernel.percpu.cpu.wait.total" : "kernel.all.cpu.wait.total", str, buf);
 
 		pmsprintf(buf, sizeof(buf), "%llu", scc->cpu_steal);
 		pmiPutValue(i ? "kernel.percpu.cpu.steal" : "kernel.all.cpu.steal", str, buf);
@@ -285,6 +286,19 @@ __print_funct_t pcp_print_cpu_stats(struct activity *a, int curr)
 
 		pmsprintf(buf, sizeof(buf), "%llu", scc->cpu_idle);
 		pmiPutValue(i ? "kernel.percpu.cpu.idle" : "kernel.all.cpu.idle", str, buf);
+
+		/*
+		 * kernel.percpu.interrupts: write total interrupt count per CPU.
+		 * The per-interrupt-line breakdown is written by pcp_print_irq_stats.
+		 * We must write a value here so that check_pcpfile_actlist() can
+		 * find the metric in the archive (it is part of cpu_metrics).
+		 * Use hardirq + softirq jiffies as a proxy.
+		 */
+		if (i) {
+			pmsprintf(buf, sizeof(buf), "%llu",
+				  scc->cpu_hardirq + scc->cpu_softirq);
+			pmiPutValue("kernel.percpu.interrupts", cpuno, buf);
+		}
 	}
 }
 
@@ -4979,6 +4993,8 @@ void pcp_read_stats(pmValueSet *values, struct file_header *header, int curr)
 		case PMID_PAGING_PGSCANDIRECT:
 		case PMID_PAGING_PGSCANKSWAPD:
 		case PMID_PAGING_PGSTEAL:
+		case PMID_PAGING_PGDEMOTE:
+		case PMID_PAGING_PGPROMOTE:
 			p = get_activity_position(act, A_PAGE, EXIT_IF_NOT_FOUND);
 			pcp_read_paging_stats(values, act[p], curr);
 			break;

@@ -134,11 +134,16 @@ fi
 AC_MSG_RESULT($PCP)
 
 # Check for PCP libraries
-LFPCP=""
+# LFPCP_READ: standalone archive-reader tools (iostat, mpstat, pidstat, tapestat, cifsiostat)
+#             — do not link pcp_stats.o so need only libpcp
+# LFPCP_WRITE: sadc, sadf, sar — all link pcp_stats.o which contains pmi* write-path
+#             functions compiled in under HAVE_PMI_APPEND; need libpcp_import too
+LFPCP_READ=""
+LFPCP_WRITE=""
 DFPCP=""
 if test $HAVE_PCP = "y"; then
 	PCP=no
-	AC_CHECK_LIB(pcp, pmGetVersion, LFPCP="-lpcp -lpcp_import", HAVE_PCP="n")
+	AC_CHECK_LIB(pcp, pmGetVersion, LFPCP_READ="-lpcp"; LFPCP_WRITE="-lpcp -lpcp_import", HAVE_PCP="n")
 	AC_MSG_CHECKING(for PCP libraries)
 	AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <pcp/pmapi.h>
 					     #include <pcp/import.h>]],
@@ -146,7 +151,8 @@ if test $HAVE_PCP = "y"; then
 	AC_MSG_RESULT($PCP)
 fi
 AC_SUBST(HAVE_PCP)
-AC_SUBST(LFPCP)
+AC_SUBST(LFPCP_READ)
+AC_SUBST(LFPCP_WRITE)
 AC_SUBST(DFPCP)
 
 if test $HAVE_PCP_IMPL_H; then

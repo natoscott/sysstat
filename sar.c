@@ -1733,9 +1733,25 @@ void read_stats_from_file(char from_file[])
 {
 #ifdef HAVE_PCP
 	int ctx;
+	struct stat st;
+	char pcp_base[MAX_FILE_LEN];
+	const char *archive_path = from_file;
 
-	if ((ctx = pmNewContext(PM_CONTEXT_ARCHIVE, from_file)) >= 0) {
-		read_stats_from_pcpfile(ctx, from_file);
+	/*
+	 * If from_file names a directory it is expected to be a daily PCP
+	 * archive directory (e.g. /var/log/sa/pcp27/).  The archive base
+	 * inside it has the same name as the directory itself, so derive:
+	 *   /var/log/sa/pcp27  ->  /var/log/sa/pcp27/pcp27
+	 */
+	if (stat(from_file, &st) == 0 && S_ISDIR(st.st_mode)) {
+		const char *bn = strrchr(from_file, '/');
+		bn = bn ? bn + 1 : from_file;
+		snprintf(pcp_base, sizeof(pcp_base), "%s/%s", from_file, bn);
+		archive_path = pcp_base;
+	}
+
+	if ((ctx = pmNewContext(PM_CONTEXT_ARCHIVE, archive_path)) >= 0) {
+		read_stats_from_pcpfile(ctx, archive_path);
 		pmDestroyContext(ctx);
 		return;
 	}
