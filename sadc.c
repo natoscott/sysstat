@@ -36,7 +36,7 @@
 #include "version.h"
 #include "sa.h"
 
-#ifdef HAVE_PCP
+#ifdef HAVE_PMI_APPEND
 #include <pcp/pmapi.h>
 #include <pcp/import.h>
 #include "pcp_stats.h"
@@ -71,7 +71,7 @@ extern char *tzname[2];
 long interval = -1;
 uint64_t flags = 0;
 
-#ifdef HAVE_PCP
+#ifdef HAVE_PMI_APPEND
 /* PCP archive base path (without extension, derived from safile or explicit) */
 char pcp_archive[MAX_FILE_LEN] = "";
 
@@ -111,7 +111,7 @@ set_pcp_default_archive(const char *safile, char *out, size_t len)
 	/* Archive base: /var/log/sa/pcp<DD>/pcp<DD> */
 	snprintf(out, len, "%s/pcp%s", pcp_dir, datefrag);
 }
-#endif /* HAVE_PCP */
+#endif /* HAVE_PMI_APPEND */
 
 int optz = 0;
 char timestamp[2][TIMESTAMP_LEN];
@@ -148,7 +148,9 @@ void usage(char *progname)
 
 	fprintf(stderr, _("Options are:\n"
 			  "[ -C <comment> ] [ -D ] [ -F ] [ -f ] [ -L ] [ -V ]\n"
+#ifdef HAVE_PMI_APPEND
 			  "[ -O pcp[=<archive>] ] [ -O pcp-only[=<archive>] ]\n"
+#endif
 			  "[ -S { INT | DISK | IPV6 | POWER | SNMP | XDISK | ALL | XALL } ]\n"));
 	exit(1);
 }
@@ -1170,7 +1172,7 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 		 * a more-recent mtime — sar/sadf use mtime to auto-select the
 		 * most recent file when no explicit filename is given.
 		 */
-#ifdef HAVE_PCP
+#ifdef HAVE_PMI_APPEND
 		if (WRITE_PCP_OUTPUT(flags)) {
 			int	p;
 
@@ -1181,7 +1183,7 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 				(*act[p]->f_pcp_print)(act[p], 0);
 			}
 			{
-				int __sts = pmiWrite((int) record_hdr.ust_time, 0);
+				int __sts = pmiHighResWrite((int64_t) record_hdr.ust_time, 0);
 				if (__sts < 0) {
 					fprintf(stderr, _("PCP write error: %s\n"),
 						pmiErrStr(__sts));
@@ -1191,7 +1193,7 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 				}
 			}
 		}
-#endif /* HAVE_PCP */
+#endif /* HAVE_PMI_APPEND */
 
 		/* Then write native sysstat format (skipped in pcp-only mode) */
 		if (ofile[0] && !WRITE_PCP_ONLY(flags)) {
@@ -1232,7 +1234,7 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 				setup_file_hdr(stdfd);
 			}
 
-#ifdef HAVE_PCP
+#ifdef HAVE_PMI_APPEND
 			/*
 			 * On rotation: end the old PCP archive and start a new
 			 * one aligned to the new day's pcpDD/ directory, then
@@ -1251,9 +1253,9 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 						continue;
 					(*act[p]->f_pcp_print)(act[p], 0);
 				}
-				pmiWrite((int) record_hdr.ust_time, 0);
+				pmiHighResWrite((int64_t) record_hdr.ust_time, 0);
 			}
-#endif /* HAVE_PCP */
+#endif /* HAVE_PMI_APPEND */
 
 			/* Write stats to native file (skipped in pcp-only mode) */
 			if (!WRITE_PCP_ONLY(flags))
@@ -1302,7 +1304,7 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 	/* Close file descriptors if they have actually been used */
 	CLOSE(stdfd);
 	CLOSE(ofd);
-#ifdef HAVE_PCP
+#ifdef HAVE_PMI_APPEND
 	if (WRITE_PCP_OUTPUT(flags))
 		pmiEnd();
 #endif
@@ -1382,7 +1384,7 @@ int main(int argc, char **argv)
 			flags |= S_F_FDATASYNC;
 		}
 
-#ifdef HAVE_PCP
+#ifdef HAVE_PMI_APPEND
 		else if (!strncmp(argv[opt], "-O", 2)) {
 			/*
 			 * -O pcp[=<archive>]
@@ -1555,7 +1557,7 @@ int main(int argc, char **argv)
 	open_ofile(&ofd, ofile, restart_mark);
 	open_stdout(&stdfd);
 
-#ifdef HAVE_PCP
+#ifdef HAVE_PMI_APPEND
 	if (WRITE_PCP_OUTPUT(flags)) {
 		int	p, sts;
 
@@ -1658,6 +1660,9 @@ int main(int argc, char **argv)
 			pmiPutValue("kernel.uname.nodename", NULL,
 				    file_hdr.sa_nodename);
 		}
+
+		/* sadc self-description metrics and archive provenance label */
+		pcp_write_sadc_header(interval);
 
 		/*
 		 * pcp_print_*_stats() functions access both buf[0] (current)
@@ -1801,7 +1806,7 @@ int main(int argc, char **argv)
 		}
 pcp_init_done:	;
 	}
-#endif /* HAVE_PCP */
+#endif /* HAVE_PMI_APPEND */
 
 	if (interval < 0) {
 		if (ofd >= 0) {
@@ -1821,6 +1826,13 @@ pcp_init_done:	;
 			/* Close file descriptor */
 			CLOSE(ofd);
 		}
+
+#ifdef HAVE_PMI_APPEND
+		if (WRITE_PCP_OUTPUT(flags))
+			pcp_write_sadc_special_record(comment,
+						      file_hdr.sa_cpu_nr,
+						      record_hdr.ust_time);
+#endif /* HAVE_PMI_APPEND */
 
 		/* Free structures */
 		sa_sys_free();

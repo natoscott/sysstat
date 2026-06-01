@@ -20,6 +20,7 @@
  ***************************************************************************
  */
 
+#include "version.h"
 #include "sa.h"
 #include "pcp_stats.h"
 #include "pcp_def_metrics.h"
@@ -5380,4 +5381,143 @@ void pcp_read_stats(pmValueSet *values, struct file_header *header, int curr)
 			pcp_read_psimem_stats(values, act[p], curr);
 			break;
 	}
+}
+
+/*
+ ***************************************************************************
+ * Build a comma-separated string of the short names of all currently
+ * collected activities, e.g. "CPU,PCSW,IO,MEMORY,NET_DEV".
+ * The "A_" prefix common to all activity names is stripped.
+ *
+ * IN:
+ * @buf		Output buffer.
+ * @len		Length of @buf.
+ ***************************************************************************
+ */
+static void
+build_sadc_activities_string(char *buf, size_t len)
+{
+	int	p, first = TRUE;
+
+	buf[0] = '\0';
+	for (p = 0; p < NR_ACT; p++) {
+		const char *name;
+
+		if (!IS_COLLECTED(act[p]->options))
+			continue;
+
+		name = act[p]->name;
+		if (!strncmp(name, "A_", 2))
+			name += 2;
+
+		if (!first)
+			strncat(buf, ",", len - strlen(buf) - 1);
+		strncat(buf, name, len - strlen(buf) - 1);
+		first = FALSE;
+	}
+}
+
+/*
+ ***************************************************************************
+ * Register sadc self-description metrics and write their initial values.
+ * Called once when a PCP archive is first opened and again after each
+ * restart mark (in case sadc was upgraded between sessions).
+ *
+ * Metrics written:
+ *   sadc.version    - sysstat version string
+ *   sadc.activities - comma-separated list of collected activities
+ *   sadc.interval   - collection interval in seconds (first open only)
+ *   sadc.comment    - pre-registered for later use at comment time
+ *
+ * A context label {"sadc":true} is added at first open so that tools
+ * can identify a sadc-created archive via 'pminfo -l'.
+ *
+ * IN:
+ * @interval_secs	Collection interval in seconds, or -1 if this is
+ *			not a normal collection invocation (sadc.interval
+ *			is then omitted).
+ ***************************************************************************
+ */
+void
+pcp_write_sadc_header(long interval_secs)
+{
+	char	abuf[1024];
+	char	ibuf[32];
+
+	/* Context label: presence of "sadc":true identifies the archive */
+	pmiPutLabel(PM_LABEL_CONTEXT, 0, 0, "sadc", "true");
+
+	/* sadc.version */
+	pmiAddMetric("sadc.version",
+		     PM_IN_NULL, PM_TYPE_STRING, PM_INDOM_NULL, PM_SEM_DISCRETE,
+		     pmiUnits(0, 0, 0, 0, 0, 0));
+	pmiPutValue("sadc.version", NULL, VERSION);
+
+	/* sadc.activities */
+	pmiAddMetric("sadc.activities",
+		     PM_IN_NULL, PM_TYPE_STRING, PM_INDOM_NULL, PM_SEM_DISCRETE,
+		     pmiUnits(0, 0, 0, 0, 0, 0));
+	build_sadc_activities_string(abuf, sizeof(abuf));
+	pmiPutValue("sadc.activities", NULL, abuf);
+
+	/* sadc.interval — only meaningful for normal collection invocations */
+	if (interval_secs > 0) {
+		pmiAddMetric("sadc.interval",
+			     PM_IN_NULL, PM_TYPE_U32, PM_INDOM_NULL, PM_SEM_DISCRETE,
+			     pmiUnits(0, 1, 0, 0, PM_TIME_SEC, 0));
+		pmsprintf(ibuf, sizeof(ibuf), "%ld", interval_secs);
+		pmiPutValue("sadc.interval", NULL, ibuf);
+	}
+
+	/* sadc.comment — pre-register so it is always in .meta */
+	pmiAddMetric("sadc.comment",
+		     PM_IN_NULL, PM_TYPE_STRING, PM_INDOM_NULL, PM_SEM_DISCRETE,
+		     pmiUnits(0, 0, 0, 0, 0, 0));
+}
+
+/*
+ ***************************************************************************
+ * Write a PCP special record (restart or comment) and close the archive.
+ * Mirrors write_special_record() for the native .sa format.
+ *
+ * Restart (empty @comment): pmiPutMark() signals the data gap; hinv.ncpu
+ * and the sadc self-description metrics are refreshed so readers have
+ * current values immediately after the discontinuity boundary.
+ *
+ * Comment (non-empty @comment): a plain timestamped annotation with no
+ * mark record — a comment is not a data disruption.
+ *
+ * IN:
+ * @comment	Admin text from sadc -C, or "" for a restart mark.
+ * @cpu_nr	file_header.sa_cpu_nr (includes the "all" CPU — subtract
+ *		one for hinv.ncpu; used only for restart records).
+ * @timestamp	Unix epoch timestamp for the record.
+ ***************************************************************************
+ */
+void
+pcp_write_sadc_special_record(const char *comment, unsigned int cpu_nr,
+			      unsigned long long timestamp)
+{
+	if (comment[0]) {
+		/* Comment: annotation only, no discontinuity mark */
+		pmiPutValue("sadc.comment", NULL, comment);
+	}
+	else {
+		/* Restart: mark the gap then refresh boundary metadata */
+		char	hbuf[32];
+		char	abuf[1024];
+
+		pmiPutMark();
+
+		pmsprintf(hbuf, sizeof(hbuf), "%u",
+			  cpu_nr > 1 ? cpu_nr - 1 : 1);
+		pmiPutValue("hinv.ncpu", NULL, hbuf);
+
+		pmiPutValue("sadc.version", NULL, VERSION);
+		build_sadc_activities_string(abuf, sizeof(abuf));
+		pmiPutValue("sadc.activities", NULL, abuf);
+	}
+
+	pmiHighResWrite((int64_t) timestamp, 0);
+	pmiEnd();
 }

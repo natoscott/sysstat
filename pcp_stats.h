@@ -107,4 +107,9 @@ __print_funct_t pcp_print_psiio_stats
 __print_funct_t pcp_print_psimem_stats
 	(struct activity *, int);
 
+/* sadc self-description and event functions */
+void pcp_write_sadc_header(long interval_secs);
+void pcp_write_sadc_special_record(const char *comment, unsigned int cpu_nr,
+				   unsigned long long timestamp);
+
 #endif /* _PCP_STATS_H */

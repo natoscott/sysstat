@@ -155,6 +155,23 @@ AC_SUBST(LFPCP_READ)
 AC_SUBST(LFPCP_WRITE)
 AC_SUBST(DFPCP)
 
+# Check for PMI_APPEND flag introduced in PCP 7.2.0.
+# Direct PCP archive output from sadc (-O pcp / -O pcp-only) requires this
+# flag so that each short-lived invocation appends to the existing daily
+# archive rather than creating a new one.  The feature is not compiled in
+# at all when building against older PCP versions.
+HAVE_PMI_APPEND="n"
+if test $HAVE_PCP = "y"; then
+	AC_MSG_CHECKING(for PMI_APPEND in pcp/import.h)
+	AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <pcp/pmapi.h>
+					     #include <pcp/import.h>]],
+					   [[int f = PMI_APPEND; (void)f;]])],
+		HAVE_PMI_APPEND="y"; DFPCP="$DFPCP -DHAVE_PMI_APPEND",
+		HAVE_PMI_APPEND="n")
+	AC_MSG_RESULT($HAVE_PMI_APPEND)
+fi
+AC_SUBST(HAVE_PMI_APPEND)
+
 if test $HAVE_PCP_IMPL_H; then
    PCP_IMPL="y"
 else
