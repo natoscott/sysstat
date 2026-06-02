@@ -6,7 +6,7 @@ sadc \- System activity data collector.
 .SH SYNOPSIS
 .B @SA_LIB_DIR@/sadc [ \-C
 .I comment
-.BI "] [ \-D ] [ \-F ] [ \-f ] [ \-L ] [ \-V ] [ \-S { " "keyword" "[,...] | ALL | XALL } ] ["
+.BI "] [ \-D ] [ \-F ] [ \-f ] [ \-L ] [ \-O { pcp | pcp-only }[=\fIarchive\fP] ] [ \-V ] [ \-S { " "keyword" "[,...] | ALL | XALL } ] ["
 .IB "interval " "[ " "count " "] ] [ " "outfile " "]"
 
 .SH DESCRIPTION
@@ -113,6 +113,57 @@ might still be running when
 starts a new one. Without locking, this situation can result in a corrupted system
 activity file.
 .TP
+.BI "\-O { pcp | pcp-only }[=" "archive" "]"
+Write performance data to a PCP (Performance Co-Pilot) archive in addition
+to, or instead of, the native sysstat binary format.
+This option requires PCP 7.2.0 or later (compiled with
+.BR HAVE_PMI_APPEND ).
+.RS
+.TP
+.B pcp
+Write data to
+.B both
+the native sysstat format
+.RI "(" "outfile" ")"
+and a PCP archive.
+If a PCP write error occurs,
+.B sadc
+continues writing only the native format.
+The PCP archive is written first so the native file has a more recent
+modification time, which
+.BR sar (1)
+uses for auto-detection.
+.TP
+.B pcp-only
+Write data to a PCP archive
+.B only;
+no native sysstat file is created.
+A PCP write error is fatal in this mode.
+.RE
+.PP
+The PCP archive is stored in a per-day directory named
+.IB "pcpDD" "/"
+(or
+.IB "pcpYYYYMMDD" "/"
+with
+.BR \-D )
+in the same directory as the native data file, with the archive base
+name matching the directory (e.g.
+.IR "@SA_DIR@/pcp28/pcp28" ").
+An explicit base path may be given with
+.BI "=\fIarchive\fP" "."
+.PP
+Each PCP archive records
+.BR sadc.version ,
+.BR sadc.activities ,
+.BR sadc.interval ,
+and
+.B sadc.comment
+metrics identifying the tool and its configuration, plus a
+.B {"sadc":true}
+context label for easy identification via
+.BR pminfo (1).
+.TP
 .BI "\-S { " "keyword" "[,...] | ALL | XALL }"
 Possible keywords are
 .BR "DISK" ", " "INT" ", " "IPV6" ", " "POWER" ", " "SNMP" ", " "XDISK" ", " "ALL " "and " "XALL" "."
@@ -173,6 +224,17 @@ Write 10 records of one second intervals to the
 .B @SA_LIB_DIR@/sadc \-C """Backup Start"" /tmp/datafile
 Insert the comment "Backup Start" into the file
 .IR "/tmp/datafile" "."
+.TP
+.B @SA_LIB_DIR@/sadc \-O pcp-only \-S XALL 1 10 /var/log/sa/sa28
+Write 10 records of one second intervals to a PCP archive in
+.IR "/var/log/sa/pcp28/" "."
+No native sysstat file is created.
+.TP
+.B @SA_LIB_DIR@/sadc \-O pcp \-S XALL 1 10 /var/log/sa/sa28
+Write 10 records to both the native
+.I /var/log/sa/sa28
+file and a PCP archive in
+.IR "/var/log/sa/pcp28/" "."
 
 .SH BUGS
 .RI "The " "/proc"

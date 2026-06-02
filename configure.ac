@@ -823,4 +823,6 @@ echo "   Configuration file:		${SYSCONFIG_DIR}/${SYSCONFIG_FILE}
    Compiler flags:		$CFLAGS
    Linker flags:		$LDFLAGS
    Automate sar reporting:	$AUX_AUTO
+   PCP archive support:		${HAVE_PCP}
+   PCP write support:		${HAVE_PMI_APPEND} (requires PCP >= 7.2.0)
 "
