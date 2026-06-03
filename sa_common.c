@@ -300,6 +300,47 @@ int check_alt_sa_dir(char *datafile, int d_off, int sa_name)
 
 /*
  ***************************************************************************
+ * Check if @datafile is a PCP archive directory (basename starts with
+ * "pcp").  If so, derive the archive base path inside it and rewrite
+ * @datafile in place:
+ *
+ *   /var/log/sa/pcp28  ->  /var/log/sa/pcp28/pcp28
+ *
+ * This mirrors check_alt_sa_dir() but for the PCP daily archive layout
+ * used by sadc -O pcp.  Called before check_alt_sa_dir() so that a pcpDD/
+ * directory is not mistakenly treated as a native sa data directory.
+ *
+ * IN/OUT:
+ * @datafile	Path to check; rewritten in place when a PCP directory is
+ *		detected.
+ *
+ * RETURNS:
+ * 1 if @datafile was a PCP directory and has been rewritten, 0 otherwise.
+ ***************************************************************************
+ */
+int check_alt_sa_pcp_dir(char *datafile)
+{
+	struct stat	st;
+	const char	*bn;
+	char		archive[MAX_FILE_LEN];
+
+	if (!check_dir(datafile))
+		return 0;	/* not a directory */
+
+	bn = strrchr(datafile, '/');
+	bn = bn ? bn + 1 : datafile;
+
+	if (strncmp(bn, "pcp", 3) != 0)
+		return 0;	/* directory, but not a pcpDD/ one */
+
+	/* Derive archive base: <dir>/pcp<DD>/pcp<DD> */
+	snprintf(archive, sizeof(archive), "%s/%s", datafile, bn);
+	snprintf(datafile, MAX_FILE_LEN, "%s", archive);
+	return 1;
+}
+
+/*
+ ***************************************************************************
  * Display sysstat version used to create system activity data file.
  *
  * IN:

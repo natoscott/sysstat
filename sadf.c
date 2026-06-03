@@ -1621,6 +1621,39 @@ void read_stats_from_file(char dfile[], char pcparchive[])
 	struct tstamp_ext rectime;
 	int ifd, tab = 0;
 
+#ifdef HAVE_PCP
+	{
+		/*
+		 * Try to open dfile as a PCP archive first.
+		 * If dfile is a directory (e.g. /var/log/sa/pcp28/) derive
+		 * the archive base path inside it automatically.
+		 */
+		int ctx;
+		struct stat st;
+		char archive_base[MAX_FILE_LEN];
+		const char *archive_path = dfile;
+
+		if (stat(dfile, &st) == 0 && S_ISDIR(st.st_mode)) {
+			const char *bn = strrchr(dfile, '/');
+			bn = bn ? bn + 1 : dfile;
+			snprintf(archive_base, sizeof(archive_base),
+				 "%s/%s", dfile, bn);
+			archive_path = archive_base;
+		}
+
+		if ((ctx = pmNewContext(PM_CONTEXT_ARCHIVE, archive_path)) >= 0) {
+			/* allocate_structures() is called inside read_stats_from_pcpfile_sadf()
+			 * after check_pcpfile_actlist() has set nr_ini values. */
+			if (SET_LC_NUMERIC_C(fmt[f_position]->options))
+				setlocale(LC_NUMERIC, "C");
+			read_stats_from_pcpfile_sadf(ctx, (char *) archive_path);
+			pmDestroyContext(ctx);
+			free_structures(act);
+			return;
+		}
+	}
+#endif /* HAVE_PCP */
+
 	/* Prepare file for reading and read its headers */
 	check_file_actlst(&ifd, dfile, act, flags, &file_magic, &file_hdr,
 			  &file_actlst, id_seq, &endian_mismatch, &arch_64);
@@ -1980,8 +2013,9 @@ int main(int argc, char **argv)
 			}
 			/* Write data to file */
 			snprintf(dfile, sizeof(dfile), "%s", argv[opt++]);
-			/* Check if this is an alternate directory for sa files */
-			check_alt_sa_dir(dfile, 0, -1);
+			/* Check if this is a PCP or native sa directory */
+			if (!check_alt_sa_pcp_dir(dfile))
+				check_alt_sa_dir(dfile, 0, -1);
 		}
 
 		else if (interval < 0) {

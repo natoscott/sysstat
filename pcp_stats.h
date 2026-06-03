@@ -112,4 +112,8 @@ void pcp_write_sadc_header(long interval_secs);
 void pcp_write_sadc_special_record(const char *comment, unsigned int cpu_nr,
 				   unsigned long long timestamp);
 
+/* Shared PCP archive reading helpers (used by sar and sadf) */
+void check_pcpfile_actlist(char *from_file, struct activity *act[], uint64_t flags);
+int read_stats_from_result(pmResult *result, struct file_header *header, int curr);
+
 #endif /* _PCP_STATS_H */

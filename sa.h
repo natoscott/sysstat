@@ -1560,6 +1560,8 @@ __read_funct_t wrap_read_bat
 /* Other functions */
 int check_alt_sa_dir
 	(char *, int, int);
+int check_alt_sa_pcp_dir
+	(char *);
 void enum_version_nr
 	(struct file_magic *);
 int get_activity_nr

@@ -25,6 +25,7 @@
 
 #include "sadf.h"
 #include "pcp_def_metrics.h"
+#include "pcp_stats.h"
 
 #ifdef USE_NLS
 #include <locale.h>
@@ -1502,6 +1503,396 @@ __printf_funct_t print_pcp_header(void *parm, int action, char *dfile, char *my_
 	}
 #endif
 }
+
+#ifdef HAVE_PCP
+/*
+ ***************************************************************************
+ * Populate file_hdr fields from a PCP archive so that format-specific
+ * header functions have valid data.
+ *
+ * IN:
+ * @ctxid	PCP archive context ID.
+ ***************************************************************************
+ */
+static void
+pcp_populate_file_hdr_sadf(int ctxid)
+{
+	pmLogLabel	label;
+	pmResult	*result;
+	struct act_metrics *metrics = &file_header_metrics;
+	int		i, sts;
+	char		*s;
+
+	if ((sts = pmGetArchiveLabel(&label)) < 0)
+		return;
+
+	file_hdr.sa_ust_time = (unsigned long long) label.start.tv_sec;
+	if (label.timezone && label.timezone[0])
+		pmsprintf(file_hdr.sa_tzname, sizeof(file_hdr.sa_tzname),
+			  "%s", label.timezone);
+
+	for (i = 0; i < FILE_HEADER_METRIC_COUNT; i++)
+		metrics->pmids[i] = metrics->descs[i].pmid;
+
+	pmSetMode(PM_MODE_FORW, &label.start, NULL);
+	if ((sts = pmFetch(metrics->count, metrics->pmids, &result)) < 0)
+		return;
+
+	for (i = 0; i < result->numpmid; i++) {
+		pmValueSet *vset = result->vset[i];
+
+		if (vset->numval < 1)
+			continue;
+
+		if (vset->pmid == PMID_FILE_HEADER_CPU_COUNT) {
+			file_hdr.sa_cpu_nr = (unsigned int)
+				pcp_read_u32(vset, 0, metrics->descs,
+					     FILE_HEADER_CPU_COUNT) + 1;
+		}
+		else if (vset->pmid == PMID_FILE_HEADER_UNAME_NODENAME) {
+			if ((s = pcp_read_str(vset, 0, metrics->descs, FILE_HEADER_UNAME_NODENAME))) {
+				pmsprintf(file_hdr.sa_nodename, sizeof(file_hdr.sa_nodename), "%s", s); free(s);
+			}
+		}
+		else if (vset->pmid == PMID_FILE_HEADER_UNAME_SYSNAME) {
+			if ((s = pcp_read_str(vset, 0, metrics->descs, FILE_HEADER_UNAME_SYSNAME))) {
+				pmsprintf(file_hdr.sa_sysname, sizeof(file_hdr.sa_sysname), "%s", s); free(s);
+			}
+		}
+		else if (vset->pmid == PMID_FILE_HEADER_UNAME_RELEASE) {
+			if ((s = pcp_read_str(vset, 0, metrics->descs, FILE_HEADER_UNAME_RELEASE))) {
+				pmsprintf(file_hdr.sa_release, sizeof(file_hdr.sa_release), "%s", s); free(s);
+			}
+		}
+		else if (vset->pmid == PMID_FILE_HEADER_UNAME_MACHINE) {
+			if ((s = pcp_read_str(vset, 0, metrics->descs, FILE_HEADER_UNAME_MACHINE))) {
+				pmsprintf(file_hdr.sa_machine, sizeof(file_hdr.sa_machine), "%s", s); free(s);
+			}
+		}
+	}
+	pmFreeResult(result);
+}
+
+/*
+ ***************************************************************************
+ * One pmFetch loop for a single activity during SVG rendering.
+ * The caller is responsible for calling pmSetMode() before each invocation
+ * to position the archive correctly.
+ *
+ * IN:
+ * @pmids	Combined pmid array (all activities + record header).
+ * @numpmids	Length of @pmids.
+ * @a		Activity to render.
+ * @parm	SVG parameters (mock flag, graph_no, time refs, etc.).
+ * @start	Archive start timespec ({0} = beginning).
+ ***************************************************************************
+ */
+static void
+pcp_svg_one_activity_pass(pmID *pmids, int numpmids, struct activity *a,
+			  struct svg_parm *parm, struct timespec *start)
+{
+	pmResult	*result;
+	struct tstamp_ext rectime;
+	unsigned long long itv;
+	int		curr = 1, sts;
+
+	pmSetMode(PM_MODE_FORW, start, NULL);
+	copy_structures(act, id_seq, record_hdr, 2, 0);
+	parm->restart = TRUE;
+
+	while ((sts = pmFetch(numpmids, pmids, &result)) >= 0) {
+
+		if (read_stats_from_result(result, &file_hdr, curr) == R_RESTART) {
+			parm->restart = TRUE;
+			pmFreeResult(result);
+			copy_structures(act, id_seq, record_hdr, 2, 0);
+			curr ^= 1;
+			continue;
+		}
+
+		if (sa_get_record_timestamp_struct(flags, &record_hdr[curr], &rectime)) {
+			pmFreeResult(result);
+			curr ^= 1;
+			continue;
+		}
+
+		if ((tm_start.use != NO_TIME) &&
+		    (datecmp(&rectime, &tm_start, FALSE) < 0)) {
+			pmFreeResult(result);
+			curr ^= 1;
+			continue;
+		}
+		if ((tm_end.use != NO_TIME) &&
+		    (datecmp(&rectime, &tm_end, FALSE) > 0)) {
+			pmFreeResult(result);
+			break;
+		}
+
+		get_itv_value(&record_hdr[curr], &record_hdr[!curr], &itv);
+		parm->ust_time_end = record_hdr[curr].ust_time;
+
+		(*a->f_svg_print)(a, curr, F_MAIN, parm, itv, &record_hdr[curr]);
+
+		parm->restart = FALSE;
+		pmFreeResult(result);
+		curr ^= 1;
+	}
+}
+
+/*
+ ***************************************************************************
+ * Read statistics from a PCP archive and render SVG output.
+ *
+ * Two rendering passes (mock then real) per activity, each driven by a
+ * pmFetch loop.  pmSetMode() rewinds to the archive start between passes
+ * (and between activities, since each gets its own pass so that
+ * parm.graph_no accumulates correctly).  PM_ERR_EOL from pmFetch signals
+ * end of archive, equivalent to EOF on a native file.
+ *
+ * IN:
+ * @pmids	Combined pmid array (all activities + record header).
+ * @numpmids	Length of @pmids.
+ * @from_file	Archive base path (used for SVG header strings).
+ ***************************************************************************
+ */
+static void
+read_stats_from_pcpfile_svg_sadf(pmID *pmids, int numpmids, char *from_file)
+{
+	struct svg_hdr_parm hparm;
+	struct svg_parm	parm;
+	struct timespec	start = {0};
+	pmResult	*result;
+	int		p, g_nr = 0, nr_act_dispd = 0;
+
+	init_custom_color_palette();
+
+	/* Count activities and total view rows that will be displayed */
+	for (p = 0; p < NR_ACT; p++) {
+		if (IS_SELECTED(act[p]->options) && act[p]->g_nr &&
+		    act[p]->f_svg_print) {
+			nr_act_dispd++;
+			g_nr += PACK_VIEWS(flags) ? act[p]->g_nr : 1;
+		}
+	}
+	hparm.views_per_row = PACK_VIEWS(flags) ? g_nr : 1;
+	hparm.nr_act_dispd  = nr_act_dispd;
+
+	/* Fetch first sample to get time reference values */
+	pmSetMode(PM_MODE_FORW, &start, NULL);
+	if (pmFetch(numpmids, pmids, &result) >= 0) {
+		read_stats_from_result(result, &file_hdr, 1);
+		pmFreeResult(result);
+	}
+
+	memset(&parm, 0, sizeof(parm));
+	parm.ust_time_ref   = (unsigned long long) get_time_ref();
+	parm.ust_time_first = record_hdr[1].ust_time;
+	parm.hour   = record_hdr[1].hour;
+	parm.minute = record_hdr[1].minute;
+	parm.second = record_hdr[1].second;
+	parm.file_hdr     = &file_hdr;
+	parm.nr_act_dispd = nr_act_dispd;
+	strcpy(parm.my_tzname, my_tzname);
+
+	/* Print opening SVG tag */
+	if (*fmt[f_position]->f_header)
+		(*fmt[f_position]->f_header)(&hparm, F_BEGIN, from_file, NULL,
+					     NULL, &file_hdr, act, id_seq, NULL);
+
+	/*
+	 * MOCK PASS: compute canvas height (each activity calls f_svg_print
+	 * with parm.mock = MOCK_MODE; graph_no accumulates row count).
+	 */
+	parm.graph_no = 0;
+	parm.mock = MOCK_MODE;
+
+	for (p = 0; p < NR_ACT; p++) {
+		if (!IS_SELECTED(act[p]->options) || !act[p]->g_nr ||
+		    !act[p]->f_svg_print)
+			continue;
+
+		(*act[p]->f_svg_print)(act[p], 0, F_BEGIN, &parm, 0,
+				       &record_hdr[2]);
+		pcp_svg_one_activity_pass(pmids, numpmids, act[p], &parm, &start);
+		(*act[p]->f_svg_print)(act[p], 1, F_END, &parm, 0,
+				       &record_hdr[0]);
+
+		init_minmax_buf(act[p], 0, act[p]->nr_spalloc);
+	}
+
+	hparm.graph_nr = SET_CANVAS_HEIGHT(flags) ? canvas_height : parm.graph_no;
+
+	/* Complete SVG header now that canvas height is known */
+	if (*fmt[f_position]->f_header)
+		(*fmt[f_position]->f_header)(&hparm, F_MAIN, from_file, NULL,
+					     NULL, &file_hdr, act, id_seq, NULL);
+
+	/*
+	 * REAL PASS: render actual SVG graph data.
+	 */
+	parm.graph_no = 0;
+	parm.mock = REAL_MODE;
+
+	for (p = 0; p < NR_ACT; p++) {
+		if (!IS_SELECTED(act[p]->options) || !act[p]->g_nr ||
+		    !act[p]->f_svg_print)
+			continue;
+
+		(*act[p]->f_svg_print)(act[p], 0, F_BEGIN, &parm, 0,
+				       &record_hdr[2]);
+		pcp_svg_one_activity_pass(pmids, numpmids, act[p], &parm, &start);
+		(*act[p]->f_svg_print)(act[p], 1, F_END, &parm, 0,
+				       &record_hdr[0]);
+	}
+
+	/* Print closing SVG tag */
+	hparm.graph_nr = parm.graph_no;
+	if (*fmt[f_position]->f_header)
+		(*fmt[f_position]->f_header)(&hparm, F_END, from_file, NULL,
+					     NULL, &file_hdr, act, id_seq, NULL);
+}
+
+/*
+ ***************************************************************************
+ * Read statistics from a PCP archive and display them in the current sadf
+ * output format.  Supports all formats including SVG.
+ *
+ * IN:
+ * @ctxid	PCP archive context ID (from pmNewContext).
+ * @from_file	Archive base path (used for format header strings).
+ ***************************************************************************
+ */
+void
+read_stats_from_pcpfile_sadf(int ctxid, char *from_file)
+{
+	pmResult	*result;
+	pmID		*pmids = NULL;
+	struct tstamp_ext rectime;
+	int		tab = 0, curr = 1;
+	int		next, reset = TRUE;
+	long		cnt = count ? count : -1L;
+	int		numpmids, i, p, j, sts;
+	struct timespec	start = {0};
+
+	pcp_populate_file_hdr_sadf(ctxid);
+
+	/*
+	 * Pre-select all activities that have PCP metrics defined.
+	 * check_pcpfile_actlist() will then deselect those whose metrics
+	 * are absent from the archive.  (In the native path sadf relies on
+	 * the file's activity list instead of AO_SELECTED.)
+	 */
+	for (p = 0; p < NR_ACT; p++) {
+		if (act[p]->metrics)
+			act[p]->options |= AO_SELECTED;
+	}
+	check_pcpfile_actlist(from_file, act, flags);
+
+	/*
+	 * Allocate activity buffers AFTER check_pcpfile_actlist() has set
+	 * nr_ini from the archive's instance domains.
+	 */
+	allocate_structures(act, flags);
+
+	allocate_bitmaps(act);
+	for (p = 0; p < NR_ACT; p++) {
+		if (act[p]->bitmap && act[p]->bitmap->b_array)
+			memset(act[p]->bitmap->b_array, ~0,
+			       BITMAP_SIZE(act[p]->bitmap->b_size));
+	}
+
+	numpmids = RECORD_HEADER_METRIC_COUNT;
+	for (p = 0; p < NR_ACT; p++) {
+		if (IS_SELECTED(act[p]->options) && act[p]->metrics)
+			numpmids += act[p]->metrics->count;
+	}
+	if ((pmids = calloc(numpmids, sizeof(pmID))) == NULL) {
+		perror("calloc");
+		goto cleanup;
+	}
+
+	j = 0;
+	for (i = 0; i < RECORD_HEADER_METRIC_COUNT; i++)
+		pmids[j++] = record_header_metric_descs[i].pmid;
+	for (p = 0; p < NR_ACT; p++) {
+		if (!IS_SELECTED(act[p]->options) || !act[p]->metrics)
+			continue;
+		for (i = 0; i < act[p]->metrics->count; i++)
+			pmids[j++] = act[p]->metrics->descs[i].pmid;
+	}
+
+	/* SVG uses a separate two-pass (mock + real) rendering path */
+	if (format == F_SVG_OUTPUT) {
+		read_stats_from_pcpfile_svg_sadf(pmids, j, from_file);
+		goto cleanup;
+	}
+
+	if (*fmt[f_position]->f_header) {
+		(*fmt[f_position]->f_header)(&tab, F_BEGIN, from_file, my_tzname,
+					     NULL, &file_hdr, act, id_seq, NULL);
+	}
+	if (*fmt[f_position]->f_statistics)
+		(*fmt[f_position]->f_statistics)(&tab, F_BEGIN, act, id_seq);
+
+	pmSetMode(PM_MODE_FORW, &start, NULL);
+	copy_structures(act, id_seq, record_hdr, 2, 0);
+
+	while ((sts = pmFetch(j, pmids, &result)) >= 0) {
+
+		if (read_stats_from_result(result, &file_hdr, curr) == R_RESTART) {
+			pmFreeResult(result);
+			copy_structures(act, id_seq, record_hdr, 2, 0);
+			reset = TRUE;
+			continue;
+		}
+
+		if (sa_get_record_timestamp_struct(flags, &record_hdr[curr], &rectime)) {
+			pmFreeResult(result);
+			curr ^= 1;
+			continue;
+		}
+
+		if ((tm_start.use != NO_TIME) &&
+		    (datecmp(&rectime, &tm_start, FALSE) < 0)) {
+			pmFreeResult(result);
+			curr ^= 1;
+			continue;
+		}
+		if ((tm_end.use != NO_TIME) &&
+		    (datecmp(&rectime, &tm_end, FALSE) > 0)) {
+			pmFreeResult(result);
+			break;
+		}
+
+		if (*fmt[f_position]->f_statistics)
+			(*fmt[f_position]->f_statistics)(&tab, F_MAIN, act, id_seq);
+
+		next = generic_write_stats(curr, tm_start.use, tm_end.use,
+					   reset, &cnt, &tab, &rectime,
+					   FALSE, ALL_ACTIVITIES);
+		if (next) {
+			curr ^= 1;
+			if (cnt > 0)
+				cnt--;
+		}
+		reset = FALSE;
+		pmFreeResult(result);
+
+		if (!cnt)
+			break;
+	}
+
+	if (*fmt[f_position]->f_statistics)
+		(*fmt[f_position]->f_statistics)(&tab, F_END, act, id_seq);
+	if (*fmt[f_position]->f_header)
+		(*fmt[f_position]->f_header)(&tab, F_END, from_file, my_tzname,
+					     NULL, &file_hdr, act, id_seq, NULL);
+cleanup:
+	free(pmids);
+	free_bitmaps(act);
+	free_structures(act);
+}
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************

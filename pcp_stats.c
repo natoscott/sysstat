@@ -5521,3 +5521,105 @@ pcp_write_sadc_special_record(const char *comment, unsigned int cpu_nr,
 	pmiHighResWrite((int64_t) timestamp, 0);
 	pmiEnd();
 }
+
+/*
+ ***************************************************************************
+ * Open a PCP archive and verify that selected activities have metrics
+ * present.  Activities whose metrics are absent are deselected.
+ * Shared between sar and sadf.
+ *
+ * IN:
+ * @from_file	Name of PCP archive.
+ * @act		Array of activities.
+ * @flags	Flags for common options and system state.
+ ***************************************************************************
+ */
+void check_pcpfile_actlist(char *from_file, struct activity *act[], uint64_t flags)
+{
+	struct act_metrics *metrics;
+	pmInDom instdomain;
+	char **namelist;
+	int *instlist;
+	int missing[NR_ACT] = {0};
+	int i, j, sts;
+
+	for (i = 0; i < NR_ACT; i++) {
+
+		if (!IS_SELECTED(act[i]->options))
+			continue;
+
+		metrics = act[i]->metrics;
+
+		if ((sts = pmLookupName(metrics->count, metrics->names, metrics->pmids)) < 0) {
+			fprintf(stderr, _("Cannot lookup %s metrics in PCP archive %s: %s\n"),
+				act[i]->name, from_file, pmErrStr(sts));
+		}
+
+		if (sts != metrics->count) {
+			act[i]->options &= ~AO_SELECTED;
+			missing[i] = sts;
+			continue;
+		}
+
+		act[i]->nr_ini = act[i]->nr2 = 1;
+		instdomain = metrics->descs[0].indom;
+		if (instdomain == PM_INDOM_NULL)
+			continue;
+
+		if ((sts = pmGetInDom(instdomain, &instlist, &namelist)) < 0)
+			continue;
+		else if (sts > 1)
+			act[i]->nr_ini = sts;
+		free(instlist);
+		free(namelist);
+	}
+
+	if (!get_activity_nr(act, AO_SELECTED, COUNT_ACTIVITIES)) {
+		for (i = 0; i < NR_ACT; i++) {
+			if (!missing[i])
+				continue;
+			metrics = act[i]->metrics;
+			fprintf(stderr,
+				_("Missing %zu of %zu metrics from %s activity:\n"),
+				missing[i] < 0 ? metrics->count : (size_t)missing[i],
+				metrics->count, act[i]->name + 2);
+			for (j = 0; j < metrics->count; j++) {
+				if (metrics->pmids[j] != PM_ID_NULL)
+					continue;
+				fprintf(stderr, "\t[%d] %s\n", j, metrics->names[j]);
+			}
+		}
+		print_collect_error();
+	}
+}
+
+/*
+ ***************************************************************************
+ * Populate activity buffers from a PCP fetch result.
+ * Shared between sar and sadf.
+ *
+ * IN:
+ * @result	Fetch result spanning all selected activities.
+ * @header	System activity file header (for context).
+ * @curr	Buffer index for current sample.
+ *
+ * RETURNS:
+ * R_RESTART if result carries a mark record, 0 otherwise.
+ ***************************************************************************
+ */
+int read_stats_from_result(pmResult *result, struct file_header *header, int curr)
+{
+	int i;
+
+	if (result->numpmid == 0)
+		return R_RESTART;
+
+	for (i = 0; i < result->numpmid; i++) {
+		pcp_read_stats(result->vset[i], header, curr);
+	}
+
+	record_hdr[curr].ust_time = result->timestamp.tv_sec;
+	record_hdr[curr].uptime_cs = result->timestamp.tv_sec / 100;
+
+	return 0;
+}
