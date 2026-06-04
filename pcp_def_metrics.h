@@ -102,7 +102,7 @@ enum {
 	SADC_ACTIVITIES,	/* string: comma-separated list of collected activities */
 	SADC_INTERVAL,		/* u32:    nominal collection interval in seconds */
 	SADC_COMMENT,		/* string: operator comment text */
-	SADC_RESTARTS,		/* u32:    restart counter (=1 per restart event) */
+	SADC_RESTARTS,		/* u32:    restart event flag (value=1 at restart timestamps) */
 	SADC_METRIC_COUNT /*end*/
 };
 

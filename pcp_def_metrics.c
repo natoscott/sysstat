@@ -345,14 +345,14 @@ pmDesc sadc_metric_descs[] = {
 		.indom = PM_INDOM_NULL,
 		.units = PMI_UNITS(0, 0, 0, 0, 0, 0),
 		.type  = PM_TYPE_STRING,
-		.sem   = PM_SEM_DISCRETE,
+		.sem   = PM_SEM_INSTANT,
 	},
 	[SADC_RESTARTS] = {
 		.pmid  = PMID_SADC_RESTARTS,
 		.indom = PM_INDOM_NULL,
 		.units = PMI_UNITS(0, 0, 1, 0, 0, PM_COUNT_ONE),
 		.type  = PM_TYPE_U32,
-		.sem   = PM_SEM_COUNTER,
+		.sem   = PM_SEM_INSTANT,
 	},
 };
 pmID sadc_metric_pmids[SADC_METRIC_COUNT];
