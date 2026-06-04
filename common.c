@@ -175,6 +175,76 @@ time_t get_time(struct tm *rectime, int d_off)
 	return get_xtime(rectime, d_off, utc == 2);
 }
 
+/*
+ ***************************************************************************
+ * Get date, time and sub-second precision via a single clock_gettime call.
+ *
+ * IN:
+ * @d_off	Day offset (number of days to go back in the past).
+ * @utc		TRUE if date and time shall be expressed in UTC.
+ *
+ * OUT:
+ * @rectime	Current date and time.
+ * @nsec	Nanosecond part of the current time.
+ *
+ * RETURNS:
+ * Value of time in seconds since the Epoch, or (time_t) -1 on error.
+ ***************************************************************************
+ */
+time_t get_xtime_nsec(struct tm *rectime, int d_off, int utc, long *nsec)
+{
+	struct timespec ts;
+	time_t timer;
+
+	if (clock_gettime(CLOCK_REALTIME, &ts) < 0)
+		return (time_t) -1;
+	timer = ts.tv_sec - (time_t) SEC_PER_DAY * d_off;
+	*nsec = ts.tv_nsec;
+
+	if (utc) {
+		if (gmtime_r(&timer, rectime) == NULL)
+			return (time_t) -1;
+	}
+	else {
+		if (localtime_r(&timer, rectime) == NULL)
+			return (time_t) -1;
+	}
+
+	return timer;
+}
+
+/*
+ ***************************************************************************
+ * Get date, time and sub-second precision, respecting ENV_TIME_DEFTM.
+ *
+ * IN:
+ * @d_off	Day offset (number of days to go back in the past).
+ *
+ * OUT:
+ * @rectime	Current date and time.
+ * @nsec	Nanosecond part of the current time.
+ *
+ * RETURNS:
+ * Value of time in seconds since the Epoch, or (time_t) -1 on error.
+ ***************************************************************************
+ */
+time_t get_time_nsec(struct tm *rectime, int d_off, long *nsec)
+{
+	static int utc = 0;
+
+	if (!utc) {
+		char *e;
+
+		/* Read environment variable value once */
+		if ((e = __getenv(ENV_TIME_DEFTM)) != NULL) {
+			utc = !strcmp(e, K_UTC);
+		}
+		utc++;
+	}
+
+	return get_xtime_nsec(rectime, d_off, utc == 2, nsec);
+}
+
 #ifdef USE_NLS
 /*
  ***************************************************************************

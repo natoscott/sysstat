@@ -1125,6 +1125,7 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 {
 	int do_sa_rotat = 0;
 	uint64_t save_flags;
+	long record_hdr_ust_nsec;
 	char new_ofile[MAX_FILE_LEN] = "";
 	struct tm rectime = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NULL};
 
@@ -1140,8 +1141,9 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 		reset_stats();
 		memset(&record_hdr, 0, RECORD_HEADER_SIZE);
 
-		/* Save time */
-		record_hdr.ust_time = (unsigned long long) get_time(&rectime, 0);
+		/* Save time; nsec companion used for sub-second PCP timestamp precision */
+		record_hdr.ust_time = (unsigned long long) get_time_nsec(&rectime, 0,
+								       &record_hdr_ust_nsec);
 		record_hdr.hour     = rectime.tm_hour;
 		record_hdr.minute   = rectime.tm_min;
 		record_hdr.second   = rectime.tm_sec;
@@ -1183,7 +1185,7 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 				(*act[p]->f_pcp_print)(act[p], 0);
 			}
 			{
-				if (pcp_write_sadc_sample(record_hdr.ust_time, flags) < 0) {
+				if (pcp_write_sadc_sample(record_hdr.ust_time, record_hdr_ust_nsec, flags) < 0) {
 					if (WRITE_PCP_ONLY(flags))
 						exit(4);
 					flags &= ~S_F_PCP_OUTPUT;
@@ -1250,7 +1252,7 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 						continue;
 					(*act[p]->f_pcp_print)(act[p], 0);
 				}
-				pcp_write_sadc_sample(record_hdr.ust_time, flags);
+				pcp_write_sadc_sample(record_hdr.ust_time, record_hdr_ust_nsec, flags);
 			}
 #endif /* HAVE_PMI_APPEND */
 

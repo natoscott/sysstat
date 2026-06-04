@@ -6101,17 +6101,19 @@ int pcp_open_sadc_archive(const char *path, const struct file_header *hdr)
  *
  * IN:
  * @ust_time	Unix epoch timestamp (seconds).
+ * @nsec	Nanosecond part of the timestamp (captured via clock_gettime).
  * @flags	sadc flags (for error-mode handling).
  *
  * RETURNS:
  * 0 on success, negative PCP error code on failure.
  ***************************************************************************
  */
-int pcp_write_sadc_sample(unsigned long long ust_time, uint64_t flags)
+int pcp_write_sadc_sample(unsigned long long ust_time, long nsec,
+			  uint64_t flags)
 {
 	int sts;
 
-	sts = pmiHighResWrite((int64_t)ust_time, 0);
+	sts = pmiHighResWrite((int64_t)ust_time, (int32_t)nsec);
 	if (sts < 0)
 		fprintf(stderr, _("PCP write error: %s\n"), pmiErrStr(sts));
 	return sts;

@@ -342,8 +342,12 @@ void get_kb_shift
 	(void);
 time_t get_xtime
 	(struct tm *, int, int);
+time_t get_xtime_nsec
+	(struct tm *, int, int, long *);
 time_t get_time
 	(struct tm *, int);
+time_t get_time_nsec
+	(struct tm *, int, long *);
 void init_nls
 	(void);
 int is_device
