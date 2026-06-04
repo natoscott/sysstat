@@ -6,7 +6,7 @@ sadc \- System activity data collector.
 .SH SYNOPSIS
 .B @SA_LIB_DIR@/sadc [ \-C
 .I comment
-.BI "] [ \-D ] [ \-F ] [ \-f ] [ \-L ] [ \-O { pcp | pcp-only }[=\fIarchive\fP] ] [ \-V ] [ \-S { " "keyword" "[,...] | ALL | XALL } ] ["
+.BI "] [ \-D ] [ \-F ] [ \-f ] [ \-L ] [ \-O { sa+pcp | pcp }[=\fIarchive\fP] ] [ \-V ] [ \-S { " "keyword" "[,...] | ALL | XALL } ] ["
 .IB "interval " "[ " "count " "] ] [ " "outfile " "]"
 
 .SH DESCRIPTION
@@ -113,14 +113,14 @@ might still be running when
 starts a new one. Without locking, this situation can result in a corrupted system
 activity file.
 .TP
-.BI "\-O { pcp | pcp-only }[=" "archive" "]"
+.BI "\-O { sa+pcp | pcp }[=" "archive" "]"
 Write performance data to a PCP (Performance Co-Pilot) archive in addition
 to, or instead of, the native sysstat binary format.
 This option requires PCP 7.2.0 or later (compiled with
 .BR HAVE_PMI_APPEND ).
 .RS
 .TP
-.B pcp
+.B sa+pcp
 Write data to
 .B both
 the native sysstat format
@@ -134,7 +134,7 @@ modification time, which
 .BR sar (1)
 uses for auto-detection.
 .TP
-.B pcp-only
+.B pcp
 Write data to a PCP archive
 .B only;
 no native sysstat file is created.
@@ -225,12 +225,12 @@ Write 10 records of one second intervals to the
 Insert the comment "Backup Start" into the file
 .IR "/tmp/datafile" "."
 .TP
-.B @SA_LIB_DIR@/sadc \-O pcp-only \-S XALL 1 10 /var/log/sa/sa28
+.B @SA_LIB_DIR@/sadc \-O pcp \-S XALL 1 10 /var/log/sa/sa28
 Write 10 records of one second intervals to a PCP archive in
 .IR "/var/log/sa/pcp28/" "."
 No native sysstat file is created.
 .TP
-.B @SA_LIB_DIR@/sadc \-O pcp \-S XALL 1 10 /var/log/sa/sa28
+.B @SA_LIB_DIR@/sadc \-O sa+pcp \-S XALL 1 10 /var/log/sa/sa28
 Write 10 records to both the native
 .I /var/log/sa/sa28
 file and a PCP archive in

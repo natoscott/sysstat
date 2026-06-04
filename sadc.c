@@ -149,7 +149,7 @@ void usage(char *progname)
 	fprintf(stderr, _("Options are:\n"
 			  "[ -C <comment> ] [ -D ] [ -F ] [ -f ] [ -L ] [ -V ]\n"
 #ifdef HAVE_PMI_APPEND
-			  "[ -O pcp[=<archive>] ] [ -O pcp-only[=<archive>] ]\n"
+			  "[ -O sa+pcp[=<archive>] ] [ -O pcp[=<archive>] ]\n"
 #endif
 			  "[ -S { INT | DISK | IPV6 | POWER | SNMP | XDISK | ALL | XALL } ]\n"));
 	exit(1);
@@ -1192,7 +1192,7 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 		}
 #endif /* HAVE_PMI_APPEND */
 
-		/* Then write native sysstat format (skipped in pcp-only mode) */
+		/* Then write native sysstat format (skipped in pcp mode) */
 		if (ofile[0] && !WRITE_PCP_ONLY(flags)) {
 			write_stats(ofd);
 		}
@@ -1254,7 +1254,7 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 			}
 #endif /* HAVE_PMI_APPEND */
 
-			/* Write stats to native file (skipped in pcp-only mode) */
+			/* Write stats to native file (skipped in pcp mode) */
 			if (!WRITE_PCP_ONLY(flags))
 				write_stats(ofd);
 		}
@@ -1301,10 +1301,8 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 	/* Close file descriptors if they have actually been used */
 	CLOSE(stdfd);
 	CLOSE(ofd);
-#ifdef HAVE_PMI_APPEND
 	if (WRITE_PCP_OUTPUT(flags))
 		pcp_close_sadc_archive();
-#endif
 }
 
 /*
@@ -1384,11 +1382,11 @@ int main(int argc, char **argv)
 #ifdef HAVE_PMI_APPEND
 		else if (!strncmp(argv[opt], "-O", 2)) {
 			/*
-			 * -O pcp[=<archive>]
+			 * -O sa+pcp[=<archive>]
 			 *   Write PCP archive AND native sysstat format.
 			 *   PCP error is non-fatal; sadc falls back to native.
 			 *
-			 * -O pcp-only[=<archive>]
+			 * -O pcp[=<archive>]
 			 *   Write PCP archive ONLY (no native .sa file).
 			 *   PCP error is fatal.
 			 *
@@ -1401,14 +1399,16 @@ int main(int argc, char **argv)
 					usage(argv[0]);
 				val = argv[opt];
 			}
-			if (!strncmp(val, "pcp-only", 8)) {
-				flags |= S_F_PCP_OUTPUT | S_F_PCP_ONLY;
-				if (val[8] == '=')
+			if (!strncmp(val, "sa+pcp", 6)) {
+				/* -O sa+pcp[=<archive>]: write both native and PCP */
+				flags |= S_F_PCP_OUTPUT;
+				if (val[6] == '=')
 					snprintf(pcp_archive, sizeof(pcp_archive),
-						 "%s", val + 9);
+						 "%s", val + 7);
 			}
 			else if (!strncmp(val, "pcp", 3)) {
-				flags |= S_F_PCP_OUTPUT;
+				/* -O pcp[=<archive>]: write PCP archive only */
+				flags |= S_F_PCP_OUTPUT | S_F_PCP_ONLY;
 				if (val[3] == '=')
 					snprintf(pcp_archive, sizeof(pcp_archive),
 						 "%s", val + 4);
@@ -1595,7 +1595,7 @@ int main(int argc, char **argv)
 				_("Cannot open PCP archive %s: %s\n"),
 				pcp_archive, pmiErrStr(sts));
 			if (WRITE_PCP_ONLY(flags))
-				exit(4);	/* fatal in pcp-only mode */
+				exit(4);	/* fatal in pcp mode */
 			flags &= ~S_F_PCP_OUTPUT;
 			goto pcp_init_done;
 		}
@@ -1775,12 +1775,10 @@ pcp_init_done:	;
 			CLOSE(ofd);
 		}
 
-#ifdef HAVE_PMI_APPEND
 		if (WRITE_PCP_OUTPUT(flags))
 			pcp_write_sadc_special_record(comment,
 						      file_hdr.sa_cpu_nr,
 						      record_hdr.ust_time);
-#endif /* HAVE_PMI_APPEND */
 
 		/* Free structures */
 		sa_sys_free();

@@ -1694,6 +1694,16 @@ read_stats_from_pcpfile_sadf(int ctxid, char *from_file)
 	struct timespec	start = {0};
 	pcp_populate_file_hdr_sadf(ctxid);
 
+	/* Read optional sadc.* provenance metrics (present in sadc-written archives) */
+	{
+		char *sadc_ver = NULL;
+		long  sadc_itv = 0;
+
+		pcp_read_sadc_metrics(&sadc_ver, &sadc_itv);
+		free(sadc_ver);	/* available for future header display use */
+		(void)sadc_itv;
+	}
+
 	/*
 	 * Respect the activity selection already set by the user's options
 	 * (e.g. sadf ... -- -u selects only CPU).  For each selected activity

@@ -12,6 +12,17 @@ COMPRESSAFTER=@COMPRESSAFTER@
 # which are used for the generation of log files.
 SADC_OPTIONS="@COLLECT_ALL@ @SADC_OPT@"
 
+# Enable PCP (Performance Co-Pilot) archive output in addition to, or instead
+# of, the native sysstat format.  Requires sysstat built with PCP support.
+# Archives are written to @SA_DIR@/pcpDD/ alongside the native saDD files.
+#
+# Examples:
+#   PCP_SA_OPTIONS="-O sa+pcp"     # write both native and PCP archives
+#   PCP_SA_OPTIONS="-O pcp"  # write only PCP archives (no native saDD)
+#
+# Leave empty (default) for native format only.
+PCP_SA_OPTIONS=""
+
 # Directory where sa and sar files are saved. The directory must exist.
 SA_DIR=@SA_DIR@
 

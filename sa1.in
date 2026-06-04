@@ -28,6 +28,9 @@ umask ${UMASK}
 [ ${HISTORY} -gt 28 ] && SADC_OPTIONS="${SADC_OPTIONS} -D"
 case "${SADC_OPTIONS}" in *-D*) LONG_NAME=y ;; esac
 
+# Merge PCP options if configured (requires sysstat built with PCP support)
+[ -n "${PCP_SA_OPTIONS}" ] && SADC_OPTIONS="${SADC_OPTIONS} ${PCP_SA_OPTIONS}"
+
 ENDIR=@SA_LIB_DIR@
 cd ${ENDIR}
 [ "$1" = "--boot" ] && shift && BOOT=y || BOOT=n
