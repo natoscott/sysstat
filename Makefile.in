@@ -366,9 +366,12 @@ tapestat.o: tapestat.c tapestat.h version.h common.h count.h rd_stats.h systest.
 
 tapestat: tapestat.o librdstats_light.a libsyscom.a
 
-pidstat.o: pidstat.c pidstat.h version.h common.h rd_stats.h count.h systest.h
+pidstat.o: pidstat.c pidstat.h version.h common.h rd_stats.h count.h systest.h pcp_pidstat.h
 
-pidstat: pidstat.o librdstats_light.a libsyscom.a
+pcp_pidstat.o: pcp_pidstat.c pidstat.h common.h pcp_pidstat.h systest.h
+
+pidstat: LFLAGS += $(LFPCP)
+pidstat: pidstat.o pcp_pidstat.o librdstats_light.a libsyscom.a
 
 mpstat.o: mpstat.c mpstat.h version.h common.h rd_stats.h count.h systest.h
 

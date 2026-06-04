@@ -40,33 +40,68 @@ interval = 15
 # are expanded to all leaves beneath them.  Metrics already collected by
 # sadc's built-in path are silently skipped.
 #
-# The default set below covers the metrics needed by pcp-pidstat(1).
+# Mapping to pidstat display columns:
+#   -u (CPU)  : proc.psinfo.utime, stime, guest_time, processor
+#               proc.psinfo.minflt, maj_flt (fault rates)
+#               proc.schedstat.run_delay (%wait)
+#   -r (mem)  : proc.psinfo.vsize (VSZ), proc.psinfo.rss (RSS)
+#               proc.psinfo.minflt, maj_flt (fault rates)
+#               proc.memory.vmstack (StkSize, -s option)
+#   -d (I/O)  : proc.io.read_bytes, write_bytes, cancelled_write_bytes
+#   -w (ctx)  : proc.psinfo.vctxsw, nvctxsw
+#   -t (thr)  : proc.psinfo.threads
+#   -v (fd)   : proc.fd.count
+#   -I (rt)   : proc.psinfo.rt_priority, policy
+#   id fields : proc.psinfo.pid, cmd, psargs, wchan_s
+#               proc.id.uid, uid_nm
+#
 # See also: /etc/pcp/pmlogconf/tools/pidstat
-#           /etc/pcp/pmlogconf/tools/atop-proc
+#           /var/lib/pcp/config/pmlogconf/tools/atop-proc
+
+# Process count
 proc.nprocs
-proc.psinfo.pid
-proc.psinfo.cmd
+
+# CPU statistics (-u)
 proc.psinfo.utime
 proc.psinfo.stime
 proc.psinfo.guest_time
+proc.psinfo.processor
+proc.schedstat.run_delay
+
+# Fault rates (used by both -u and -r)
 proc.psinfo.minflt
 proc.psinfo.maj_flt
+
+# Memory statistics (-r)
 proc.psinfo.vsize
 proc.psinfo.rss
-proc.psinfo.processor
-proc.psinfo.rt_priority
-proc.psinfo.policy
-proc.psinfo.threads
-proc.psinfo.vctxsw
-proc.psinfo.nvctxsw
-proc.psinfo.wchan_s
-proc.psinfo.psargs
+
+# Stack statistics (-s)
 proc.memory.vmstack
-proc.io.rchar
-proc.io.wchar
+
+# I/O statistics (-d)
 proc.io.read_bytes
 proc.io.write_bytes
+proc.io.cancelled_write_bytes
+
+# Context switch statistics (-w)
+proc.psinfo.vctxsw
+proc.psinfo.nvctxsw
+
+# Thread count (-t)
+proc.psinfo.threads
+
+# File descriptor count (-v)
+proc.fd.count
+
+# Real-time scheduling (-I)
+proc.psinfo.rt_priority
+proc.psinfo.policy
+
+# Process identification
+proc.psinfo.pid
+proc.psinfo.cmd
+proc.psinfo.psargs
+proc.psinfo.wchan_s
 proc.id.uid
 proc.id.uid_nm
-proc.fd.count
-proc.schedstat.run_delay
