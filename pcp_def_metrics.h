@@ -106,12 +106,12 @@ enum {
 	SADC_METRIC_COUNT /*end*/
 };
 
-/* Dynamic PMIDs: pmiAddMetric assigns these at runtime */
-#define PMID_SADC_VERSION	PM_IN_NULL
-#define PMID_SADC_ACTIVITIES	PM_IN_NULL
-#define PMID_SADC_INTERVAL	PM_IN_NULL
-#define PMID_SADC_COMMENT	PM_IN_NULL
-#define PMID_SADC_RESTARTS	PM_IN_NULL
+/* PCP domain 40 is reserved for sysstat/sadc metrics */
+#define PMID_SADC_VERSION	PMI_ID(40, 0, 0)
+#define PMID_SADC_ACTIVITIES	PMI_ID(40, 0, 1)
+#define PMID_SADC_INTERVAL	PMI_ID(40, 0, 2)
+#define PMID_SADC_COMMENT	PMI_ID(40, 0, 3)
+#define PMID_SADC_RESTARTS	PMI_ID(40, 0, 4)
 
 extern const char *sadc_metric_names[];
 extern pmDesc sadc_metric_descs[];

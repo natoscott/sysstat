@@ -320,35 +320,35 @@ const char *sadc_metric_names[] = {
 };
 pmDesc sadc_metric_descs[] = {
 	[SADC_VERSION] = {
-		.pmid  = PM_IN_NULL,
+		.pmid  = PMID_SADC_VERSION,
 		.indom = PM_INDOM_NULL,
 		.units = PMI_UNITS(0, 0, 0, 0, 0, 0),
 		.type  = PM_TYPE_STRING,
 		.sem   = PM_SEM_DISCRETE,
 	},
 	[SADC_ACTIVITIES] = {
-		.pmid  = PM_IN_NULL,
+		.pmid  = PMID_SADC_ACTIVITIES,
 		.indom = PM_INDOM_NULL,
 		.units = PMI_UNITS(0, 0, 0, 0, 0, 0),
 		.type  = PM_TYPE_STRING,
 		.sem   = PM_SEM_DISCRETE,
 	},
 	[SADC_INTERVAL] = {
-		.pmid  = PM_IN_NULL,
+		.pmid  = PMID_SADC_INTERVAL,
 		.indom = PM_INDOM_NULL,
 		.units = PMI_UNITS(0, 1, 0, 0, PM_TIME_SEC, 0),
 		.type  = PM_TYPE_U32,
 		.sem   = PM_SEM_DISCRETE,
 	},
 	[SADC_COMMENT] = {
-		.pmid  = PM_IN_NULL,
+		.pmid  = PMID_SADC_COMMENT,
 		.indom = PM_INDOM_NULL,
 		.units = PMI_UNITS(0, 0, 0, 0, 0, 0),
 		.type  = PM_TYPE_STRING,
 		.sem   = PM_SEM_DISCRETE,
 	},
 	[SADC_RESTARTS] = {
-		.pmid  = PM_IN_NULL,
+		.pmid  = PMID_SADC_RESTARTS,
 		.indom = PM_INDOM_NULL,
 		.units = PMI_UNITS(0, 0, 1, 0, 0, PM_COUNT_ONE),
 		.type  = PM_TYPE_U32,
