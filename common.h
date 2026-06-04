@@ -258,6 +258,8 @@ extern int dplaces_nr;
 #define HZ		hz
 extern unsigned long hz;
 
+#define JIFFIES_TO_MSEC(j)	((j) * 1000ULL / hz)
+
 /* Number of bit shifts to convert pages to kB */
 extern unsigned int kb_shift;
 

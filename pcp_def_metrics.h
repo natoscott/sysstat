@@ -17,11 +17,21 @@
 
 struct act_metrics {
 	size_t count;		/* number of metrics in this group */
-	int *handles;		/* fast-lookup PMI output handles */
+	int max_inst;		/* instance stride for handles[] (>=1 after pcp_alloc_handles) */
+	int *handles;		/* [count * max_inst] write handles, NULL until pcp_def_* */
+	int *inst_ids;		/* [max_inst] PCP instance ID per slot; NULL for scalar groups */
 	pmDesc *descs;		/* metric descriptors array */
 	const char **names;	/* array of count metric names */
 	pmID *pmids;		/* array of count metric IDs */
 };
+
+/*
+ * Access a write handle for (metric_index, slot).
+ * Only valid after pcp_alloc_handles() has been called for this group.
+ * For scalar metrics slot is always 0.
+ */
+#define ACT_HANDLE(m, metric, slot) \
+	((m)->handles[(metric) * (m)->max_inst + (slot)])
 
 /*
  ***************************************************************************
@@ -62,6 +72,7 @@ enum {
 #define PMID_FILE_HEADER_UNAME_MACHINE		PMI_ID(60, 12, 3)
 #define PMID_FILE_HEADER_UNAME_NODENAME		PMI_ID(60, 12, 4)
 
+extern const char *file_header_metric_names[];
 extern pmDesc file_header_metric_descs[];
 extern struct act_metrics file_header_metrics;
 
@@ -79,6 +90,32 @@ enum {
 
 extern pmDesc record_header_metric_descs[];
 extern struct act_metrics record_header_metrics;
+
+/*
+ ***************************************************************************
+ * sadc provenance metric grouping — sadc.* namespace
+ ***************************************************************************
+ */
+
+enum {
+	SADC_VERSION,		/* string: sysstat version that wrote the archive */
+	SADC_ACTIVITIES,	/* string: comma-separated list of collected activities */
+	SADC_INTERVAL,		/* u32:    nominal collection interval in seconds */
+	SADC_COMMENT,		/* string: operator comment text */
+	SADC_RESTARTS,		/* u32:    restart counter (=1 per restart event) */
+	SADC_METRIC_COUNT /*end*/
+};
+
+/* Dynamic PMIDs: pmiAddMetric assigns these at runtime */
+#define PMID_SADC_VERSION	PM_IN_NULL
+#define PMID_SADC_ACTIVITIES	PM_IN_NULL
+#define PMID_SADC_INTERVAL	PM_IN_NULL
+#define PMID_SADC_COMMENT	PM_IN_NULL
+#define PMID_SADC_RESTARTS	PM_IN_NULL
+
+extern const char *sadc_metric_names[];
+extern pmDesc sadc_metric_descs[];
+extern struct act_metrics sadc_metrics;
 
 /*
  ***************************************************************************
@@ -104,7 +141,7 @@ enum {
 	CPU_PERCPU_SYS,
 	CPU_PERCPU_IDLE,
 	CPU_PERCPU_WAITTOTAL,
-	CPU_PERCPU_IRQTOTAL,
+	CPU_PERCPU_CPU_INTR,
 	CPU_PERCPU_IRQSOFT,
 	CPU_PERCPU_IRQHARD,
 	CPU_PERCPU_STEAL,
@@ -130,7 +167,7 @@ enum {
 #define PMID_CPU_PERCPU_SYS			PMI_ID(60, 0, 2)
 #define PMID_CPU_PERCPU_IDLE			PMI_ID(60, 0, 3)
 #define PMID_CPU_PERCPU_WAITTOTAL		PMI_ID(60, 0, 30)
-#define PMID_CPU_PERCPU_IRQTOTAL		PMI_ID(60, 0, 31)
+#define PMID_CPU_PERCPU_CPU_INTR		PMI_ID(60, 0, 31)
 #define PMID_CPU_PERCPU_IRQSOFT			PMI_ID(60, 0, 56)
 #define PMID_CPU_PERCPU_IRQHARD			PMI_ID(60, 0, 57)
 #define PMID_CPU_PERCPU_STEAL			PMI_ID(60, 0, 58)
@@ -323,6 +360,7 @@ enum {
 	MEM_PHYS_MB,
 	MEM_PHYS_KB,
 	MEM_UTIL_FREE,
+	MEM_UTIL_SHARED,
 	MEM_UTIL_AVAIL,
 	MEM_UTIL_USED,
 	MEM_UTIL_BUFFER,
@@ -345,6 +383,7 @@ enum {
 #define PMID_MEM_PHYS_MB			PMI_ID(60, 1, 9)
 #define PMID_MEM_PHYS_KB			PMI_ID(60, 1, 0)
 #define PMID_MEM_UTIL_FREE			PMI_ID(60, 1, 2)
+#define PMID_MEM_UTIL_SHARED			PMI_ID(60, 1, 3)
 #define PMID_MEM_UTIL_AVAIL			PMI_ID(60, 1, 58)
 #define PMID_MEM_UTIL_USED			PMI_ID(60, 1, 1)
 #define PMID_MEM_UTIL_BUFFER			PMI_ID(60, 1, 4)
@@ -1284,6 +1323,13 @@ enum {
 extern pmDesc psi_mem_metric_descs[];
 extern struct act_metrics psi_mem_metrics;
 #define STATS_PSI_MEM_METRICS (&psi_mem_metrics)
+
+/* Handle allocation helpers (implemented in pcp_def_metrics.c) */
+void pcp_alloc_handles(struct act_metrics *m, size_t num_inst);
+void pcp_alloc_handle(struct act_metrics *m, size_t metric,
+		      size_t slot, int inst_id,
+		      const char *inst_name);
+size_t pcp_find_slot(const struct act_metrics *m, int inst_id);
 
 #else
 /*

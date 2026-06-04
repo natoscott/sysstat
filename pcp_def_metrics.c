@@ -80,6 +80,142 @@ void act_add_instance(struct activity *a, int metric, char *name, int inst)
 
 /*
  ***************************************************************************
+ * Ensure the write-handle array for a metric group can accommodate
+ * num_inst instances per metric.  Allocates on the first call; grows
+ * (realloc) only when num_inst exceeds the current capacity.  New slots
+ * are initialised to -1 (invalid handle).  No-op when num_inst is within
+ * existing capacity.
+ *
+ * IN/OUT:
+ * @m		Activity metrics group whose handle array to (re)allocate.
+ * @num_inst	Number of instances required (>= 1).
+ ***************************************************************************
+ */
+void pcp_alloc_handles(struct act_metrics *m, size_t num_inst)
+{
+	size_t old_slots, old_total, new_total;
+	int *p, *q;
+
+	if (num_inst < 1)
+		num_inst = 1;
+	if (m->handles && (int)num_inst <= m->max_inst)
+		return;
+
+	old_slots = (size_t)m->max_inst;
+	old_total = m->count * old_slots;
+	new_total = m->count * num_inst;
+
+	p = realloc(m->handles, new_total * sizeof(int));
+	if (!p)
+		PANIC(ENOMEM);
+	memset(p + old_total, -1, (new_total - old_total) * sizeof(int));
+	m->handles = p;
+
+	/*
+	 * inst_ids is allocated only for dynamic (instanced) groups — those
+	 * whose handles array was not pre-set to a static array.  Scalar
+	 * groups are always PM_IN_NULL, so no lookup table is needed.
+	 */
+	if (m->inst_ids || old_slots == 0) {
+		q = realloc(m->inst_ids, num_inst * sizeof(int));
+		if (!q)
+			PANIC(ENOMEM);
+		/* Initialise new slots to PM_IN_NULL */
+		for (size_t i = old_slots; i < num_inst; i++)
+			q[i] = PM_IN_NULL;
+		m->inst_ids = q;
+	}
+
+	m->max_inst = (int)num_inst;
+}
+
+/*
+ ***************************************************************************
+ * Obtain and store the write handle for one (metric, instance) pair.
+ *
+ * @metric	Metric index within the group (0-based).
+ * @slot	Sequential array slot (0-based); use 0 for scalar metrics.
+ * @inst_id	PCP instance identifier (PM_IN_NULL for scalar metrics).
+ * @inst_name	Instance name string passed to pmiGetHandle; NULL for scalars.
+ *
+ * The handle array is grown automatically when slot exceeds current capacity.
+ ***************************************************************************
+ */
+void pcp_alloc_handle(struct act_metrics *m, size_t metric,
+		      size_t slot, int inst_id,
+		      const char *inst_name)
+{
+	int h;
+
+	pcp_alloc_handles(m, slot + 1);
+	h = pmiGetHandle(m->names[metric], inst_name);
+	/*
+	 * pmiGetHandle returns a negative error code when there is no active
+	 * PMI write context (e.g. when pcp_def_* is called from a read path
+	 * like sadf -j reading a PCP archive).  Leave the slot at -1 in that
+	 * case; pmiPutValueHandle will not be called on it.
+	 */
+	if (h >= 0)
+		ACT_HANDLE(m, metric, slot) = h;
+	if (m->inst_ids)
+		m->inst_ids[slot] = inst_id;
+}
+
+/*
+ ***************************************************************************
+ * Find the handle-array slot for a given PCP instance identifier.
+ * Returns (size_t)-1 if not found (e.g. on scalar-only groups where
+ * inst_ids is NULL).
+ *
+ * IN:
+ * @m		Metric group to search.
+ * @inst_id	PCP instance identifier to look up.
+ ***************************************************************************
+ */
+size_t pcp_find_slot(const struct act_metrics *m, int inst_id)
+{
+	int i;
+
+	if (!m->inst_ids)
+		return (size_t)-1;
+	for (i = 0; i < m->max_inst; i++) {
+		if (m->inst_ids[i] == inst_id)
+			return (size_t)i;
+	}
+	return (size_t)-1;
+}
+
+/*
+ ***************************************************************************
+ * Wire write handles for a purely instanced metric group whose instances
+ * are derived from a->item_list (disks, NICs, serial lines, sensors…).
+ * Must be called after all pmiAddMetric and pmiAddInstance calls are done.
+ *
+ * IN:
+ * @a		Activity whose metrics and item_list describe the group.
+ ***************************************************************************
+ */
+static void
+pcp_alloc_item_list_handles(struct activity *a)
+{
+	struct act_metrics *m = a->metrics;
+	struct sa_item *list;
+	size_t metric, slot;
+	int n_inst = 0, inst_id = 0;
+
+	for (list = a->item_list; list != NULL; list = list->next)
+		n_inst++;
+	pcp_alloc_handles(m, (size_t)(n_inst > 0 ? n_inst : 1));
+	for (slot = 0, list = a->item_list;
+	     list != NULL;
+	     list = list->next, slot++, inst_id++) {
+		for (metric = 0; metric < m->count; metric++)
+			pcp_alloc_handle(m, metric, slot, inst_id, list->item_name);
+	}
+}
+
+/*
+ ***************************************************************************
  * Define PCP host metrics for an individual archive (file header).
  ***************************************************************************
  */
@@ -171,6 +307,67 @@ struct act_metrics record_header_metrics = {
 };
 
 /*
+ * sadc provenance metrics — written once per archive/event.
+ * PMIDs are assigned dynamically by pmiAddMetric (PM_IN_NULL placeholders).
+ * All metrics use scalar static handles (one slot, no instance domain).
+ */
+const char *sadc_metric_names[] = {
+	[SADC_VERSION]    = "sadc.version",
+	[SADC_ACTIVITIES] = "sadc.activities",
+	[SADC_INTERVAL]   = "sadc.interval",
+	[SADC_COMMENT]    = "sadc.comment",
+	[SADC_RESTARTS]   = "sadc.restarts",
+};
+pmDesc sadc_metric_descs[] = {
+	[SADC_VERSION] = {
+		.pmid  = PM_IN_NULL,
+		.indom = PM_INDOM_NULL,
+		.units = PMI_UNITS(0, 0, 0, 0, 0, 0),
+		.type  = PM_TYPE_STRING,
+		.sem   = PM_SEM_DISCRETE,
+	},
+	[SADC_ACTIVITIES] = {
+		.pmid  = PM_IN_NULL,
+		.indom = PM_INDOM_NULL,
+		.units = PMI_UNITS(0, 0, 0, 0, 0, 0),
+		.type  = PM_TYPE_STRING,
+		.sem   = PM_SEM_DISCRETE,
+	},
+	[SADC_INTERVAL] = {
+		.pmid  = PM_IN_NULL,
+		.indom = PM_INDOM_NULL,
+		.units = PMI_UNITS(0, 1, 0, 0, PM_TIME_SEC, 0),
+		.type  = PM_TYPE_U32,
+		.sem   = PM_SEM_DISCRETE,
+	},
+	[SADC_COMMENT] = {
+		.pmid  = PM_IN_NULL,
+		.indom = PM_INDOM_NULL,
+		.units = PMI_UNITS(0, 0, 0, 0, 0, 0),
+		.type  = PM_TYPE_STRING,
+		.sem   = PM_SEM_DISCRETE,
+	},
+	[SADC_RESTARTS] = {
+		.pmid  = PM_IN_NULL,
+		.indom = PM_INDOM_NULL,
+		.units = PMI_UNITS(0, 0, 1, 0, 0, PM_COUNT_ONE),
+		.type  = PM_TYPE_U32,
+		.sem   = PM_SEM_COUNTER,
+	},
+};
+pmID sadc_metric_pmids[SADC_METRIC_COUNT];
+static int sadc_handles[SADC_METRIC_COUNT];
+
+struct act_metrics sadc_metrics = {
+	.count    = SADC_METRIC_COUNT,
+	.max_inst = 1,
+	.handles  = sadc_handles,
+	.descs    = sadc_metric_descs,
+	.names    = sadc_metric_names,
+	.pmids    = sadc_metric_pmids,
+};
+
+/*
  ***************************************************************************
  * Define PCP instance for per-CPU interrupts statistics.
  *
@@ -185,10 +382,14 @@ void pcp_def_percpu_intr_instances(struct activity *a, int cpu)
 	char buf[64];
 	struct sa_item *list;
 
-	/* Create instance for each interrupt for the current CPU */
+	/*
+	 * kernel.percpu.interrupts lives in the cpu_metrics group (PMI_INDOM(60,0)),
+	 * not irq_metrics, so go directly to pmiAddInstance rather than routing
+	 * through act_add_instance which would index into the wrong metrics table.
+	 */
 	for (list = a->item_list; list != NULL; list = list->next) {
 		pmsprintf(buf, sizeof(buf), "%s::cpu%d", list->item_name, cpu);
-		act_add_instance(a, CPU_PERCPU_INTERRUPTS, buf, inst++);
+		pmiAddInstance(PMI_INDOM(60, 0), buf, inst++);
 	}
 }
 
@@ -230,7 +431,6 @@ void pcp_def_global_cpu_metrics(struct activity *a)
 	act_add_metric(a, CPU_ALLCPU_SYS);
 	act_add_metric(a, CPU_ALLCPU_IDLE);
 	act_add_metric(a, CPU_ALLCPU_WAITTOTAL);
-	act_add_metric(a, CPU_ALLCPU_IRQTOTAL);
 	act_add_metric(a, CPU_ALLCPU_IRQSOFT);
 	act_add_metric(a, CPU_ALLCPU_IRQHARD);
 	act_add_metric(a, CPU_ALLCPU_STEAL);
@@ -253,7 +453,7 @@ void pcp_def_percpu_metrics(struct activity *a)
 	act_add_metric(a, CPU_PERCPU_SYS);
 	act_add_metric(a, CPU_PERCPU_IDLE);
 	act_add_metric(a, CPU_PERCPU_WAITTOTAL);
-	act_add_metric(a, CPU_PERCPU_IRQTOTAL);
+	act_add_metric(a, CPU_PERCPU_CPU_INTR);
 	act_add_metric(a, CPU_PERCPU_IRQSOFT);
 	act_add_metric(a, CPU_PERCPU_IRQHARD);
 	act_add_metric(a, CPU_PERCPU_STEAL);
@@ -410,6 +610,92 @@ void pcp_def_cpu_metrics(struct activity *a)
 			}
 		}
 	}
+
+	/*
+	 * Wire write handles after all metrics and instances are registered.
+	 * Per-CPU slot indices are sequential (0, 1, 2…) while inst_ids hold
+	 * the actual CPU number so pcp_find_slot() can resolve cpu→slot at
+	 * write time when bitmap filtering produces non-contiguous CPU numbers.
+	 */
+	if (a->id == A_CPU || a->id == A_NET_SOFT) {
+		size_t slot = 0;
+		char cpuno[64];
+		/*
+		 * Pre-allocate with the final max_inst (= number of CPUs) so that
+		 * scalar (all-CPU) handles are placed at the correct stride from the
+		 * start.  Without this, the first per-CPU pcp_alloc_handle call that
+		 * grows max_inst would leave scalar handles at the wrong positions.
+		 */
+		{
+			int n_cpu = (a->nr_ini > 1) ? (a->nr_ini - 1) : 1;
+			pcp_alloc_handles(a->metrics, (size_t)n_cpu);
+		}
+
+		if (a->id == A_CPU) {
+			/* All-CPU scalar metrics */
+			pcp_alloc_handle(a->metrics, CPU_ALLCPU_USER,      0, PM_IN_NULL, NULL);
+			pcp_alloc_handle(a->metrics, CPU_ALLCPU_NICE,      0, PM_IN_NULL, NULL);
+			pcp_alloc_handle(a->metrics, CPU_ALLCPU_SYS,       0, PM_IN_NULL, NULL);
+			pcp_alloc_handle(a->metrics, CPU_ALLCPU_IDLE,      0, PM_IN_NULL, NULL);
+			pcp_alloc_handle(a->metrics, CPU_ALLCPU_WAITTOTAL, 0, PM_IN_NULL, NULL);
+			pcp_alloc_handle(a->metrics, CPU_ALLCPU_IRQSOFT,   0, PM_IN_NULL, NULL);
+			pcp_alloc_handle(a->metrics, CPU_ALLCPU_IRQHARD,   0, PM_IN_NULL, NULL);
+			pcp_alloc_handle(a->metrics, CPU_ALLCPU_STEAL,     0, PM_IN_NULL, NULL);
+			pcp_alloc_handle(a->metrics, CPU_ALLCPU_GUEST,     0, PM_IN_NULL, NULL);
+			pcp_alloc_handle(a->metrics, CPU_ALLCPU_GUESTNICE, 0, PM_IN_NULL, NULL);
+		} else {
+			/* A_NET_SOFT all-CPU scalars */
+			pcp_alloc_handle(a->metrics, SOFTNET_ALLCPU_PROCESSED,    0, PM_IN_NULL, NULL);
+			pcp_alloc_handle(a->metrics, SOFTNET_ALLCPU_DROPPED,      0, PM_IN_NULL, NULL);
+			pcp_alloc_handle(a->metrics, SOFTNET_ALLCPU_TIMESQUEEZE,  0, PM_IN_NULL, NULL);
+			pcp_alloc_handle(a->metrics, SOFTNET_ALLCPU_RECEIVEDRPS,  0, PM_IN_NULL, NULL);
+			pcp_alloc_handle(a->metrics, SOFTNET_ALLCPU_FLOWLIMIT,    0, PM_IN_NULL, NULL);
+			pcp_alloc_handle(a->metrics, SOFTNET_ALLCPU_BACKLOGLENGTH,0, PM_IN_NULL, NULL);
+		}
+
+		/* Per-CPU instanced handles */
+		for (i = 1; i < a->nr_ini; i++) {
+			if (a->bitmap != NULL && a->bitmap->b_array != NULL &&
+			    !IS_CPU_SELECTED(a->bitmap->b_array, i))
+				continue;
+			pmsprintf(cpuno, sizeof(cpuno), "cpu%d", i - 1);
+			if (a->id == A_CPU) {
+				pcp_alloc_handle(a->metrics, CPU_PERCPU_USER,      slot, i-1, cpuno);
+				pcp_alloc_handle(a->metrics, CPU_PERCPU_NICE,      slot, i-1, cpuno);
+				pcp_alloc_handle(a->metrics, CPU_PERCPU_SYS,       slot, i-1, cpuno);
+				pcp_alloc_handle(a->metrics, CPU_PERCPU_IDLE,      slot, i-1, cpuno);
+				pcp_alloc_handle(a->metrics, CPU_PERCPU_WAITTOTAL, slot, i-1, cpuno);
+				pcp_alloc_handle(a->metrics, CPU_PERCPU_CPU_INTR,  slot, i-1, cpuno);
+				pcp_alloc_handle(a->metrics, CPU_PERCPU_IRQSOFT,   slot, i-1, cpuno);
+				pcp_alloc_handle(a->metrics, CPU_PERCPU_IRQHARD,   slot, i-1, cpuno);
+				pcp_alloc_handle(a->metrics, CPU_PERCPU_STEAL,     slot, i-1, cpuno);
+				pcp_alloc_handle(a->metrics, CPU_PERCPU_GUEST,     slot, i-1, cpuno);
+				pcp_alloc_handle(a->metrics, CPU_PERCPU_GUESTNICE, slot, i-1, cpuno);
+				pcp_alloc_handle(a->metrics, CPU_PERCPU_INTERRUPTS,slot, i-1, cpuno);
+			} else {
+				pcp_alloc_handle(a->metrics, SOFTNET_PERCPU_PROCESSED,    slot, i-1, cpuno);
+				pcp_alloc_handle(a->metrics, SOFTNET_PERCPU_DROPPED,      slot, i-1, cpuno);
+				pcp_alloc_handle(a->metrics, SOFTNET_PERCPU_TIMESQUEEZE,  slot, i-1, cpuno);
+				pcp_alloc_handle(a->metrics, SOFTNET_PERCPU_RECEIVEDRPS,  slot, i-1, cpuno);
+				pcp_alloc_handle(a->metrics, SOFTNET_PERCPU_FLOWLIMIT,    slot, i-1, cpuno);
+				pcp_alloc_handle(a->metrics, SOFTNET_PERCPU_BACKLOGLENGTH,slot, i-1, cpuno);
+			}
+			slot++;
+		}
+	}
+	else if (a->id == A_PWR_CPU) {
+		size_t slot = 0;
+		char cpuno[64];
+
+		for (i = 1; i < a->nr_ini; i++) {
+			if (a->bitmap != NULL && a->bitmap->b_array != NULL &&
+			    !IS_CPU_SELECTED(a->bitmap->b_array, i))
+				continue;
+			pmsprintf(cpuno, sizeof(cpuno), "cpu%d", i - 1);
+			pcp_alloc_handle(a->metrics, POWER_PERCPU_CLOCK, slot, i-1, cpuno);
+			slot++;
+		}
+	}
 }
 
 const char *cpu_metric_names[] = {
@@ -429,7 +715,7 @@ const char *cpu_metric_names[] = {
 	[CPU_PERCPU_SYS] = "kernel.percpu.cpu.sys",
 	[CPU_PERCPU_IDLE] = "kernel.percpu.cpu.idle",
 	[CPU_PERCPU_WAITTOTAL] = "kernel.percpu.cpu.wait.total",
-	[CPU_PERCPU_IRQTOTAL] = "kernel.percpu.cpu.irq.total",
+	[CPU_PERCPU_CPU_INTR] = "kernel.percpu.cpu.intr",
 	[CPU_PERCPU_IRQSOFT] = "kernel.percpu.cpu.irq.soft",
 	[CPU_PERCPU_IRQHARD] = "kernel.percpu.cpu.irq.hard",
 	[CPU_PERCPU_STEAL] = "kernel.percpu.cpu.steal",
@@ -550,8 +836,8 @@ pmDesc cpu_metric_descs[] = {
 		.type = PM_TYPE_U64,
 		.sem = PM_SEM_COUNTER,
 	},
-	[CPU_PERCPU_IRQTOTAL] = {
-		.pmid = PMID_CPU_PERCPU_IRQTOTAL,
+	[CPU_PERCPU_CPU_INTR] = {
+		.pmid = PMID_CPU_PERCPU_CPU_INTR,
 		.indom = PMI_INDOM(60, 0),
 		.units = PMI_UNITS(0, 1, 0, 0, PM_TIME_MSEC, 0),
 		.type = PM_TYPE_U64,
@@ -756,6 +1042,9 @@ void pcp_def_pcsw_metrics(struct activity *a)
 {
 	act_add_metric(a, PCSW_CONTEXT_SWITCH);
 	act_add_metric(a, PCSW_FORK_SYSCALLS);
+
+	for (size_t _i = 0; _i < PCSW_METRIC_COUNT; _i++)
+		pcp_alloc_handle(a->metrics, _i, 0, PM_IN_NULL, NULL);
 }
 
 const char *pcsw_metric_names[] = {
@@ -780,8 +1069,12 @@ pmDesc pcsw_metric_descs[] = {
 };
 pmID pcsw_metric_pmids[PCSW_METRIC_COUNT];
 
+static int pcsw_handles[PCSW_METRIC_COUNT];
+
 struct act_metrics pcsw_metrics = {
 	.count = PCSW_METRIC_COUNT,
+	.max_inst	= 1,
+	.handles	= pcsw_handles,
 	.descs = pcsw_metric_descs,
 	.names = pcsw_metric_names,
 	.pmids = pcsw_metric_pmids,
@@ -826,6 +1119,17 @@ void pcp_def_irq_metrics(struct activity *a)
 			act_add_instance(a, IRQ_PERIRQ_TOTAL, list->item_name, inst++);
 		}
 	}
+
+	/* Wire handles after all metrics and instances are registered */
+	pcp_alloc_handle(a->metrics, IRQ_ALLIRQ_TOTAL, 0, PM_IN_NULL, NULL);
+	inst = 0;
+	for (list = a->item_list; list != NULL; list = list->next) {
+		if (!strcmp(list->item_name, K_LOWERSUM))
+			continue;
+		pcp_alloc_handle(a->metrics, IRQ_PERIRQ_TOTAL,
+				 (size_t)inst, inst, list->item_name);
+		inst++;
+	}
 }
 
 const char *irq_metric_names[] = {
@@ -866,6 +1170,9 @@ void pcp_def_swap_metrics(struct activity *a)
 {
 	act_add_metric(a, SWAP_PAGESIN);
 	act_add_metric(a, SWAP_PAGESOUT);
+
+	for (size_t _i = 0; _i < SWAP_METRIC_COUNT; _i++)
+		pcp_alloc_handle(a->metrics, _i, 0, PM_IN_NULL, NULL);
 }
 
 const char *swap_metric_names[] = {
@@ -890,8 +1197,12 @@ pmDesc swap_metric_descs[] = {
 };
 pmID swap_metric_pmids[SWAP_METRIC_COUNT];
 
+static int swap_handles[SWAP_METRIC_COUNT];
+
 struct act_metrics swap_metrics = {
 	.count = SWAP_METRIC_COUNT,
+	.max_inst	= 1,
+	.handles	= swap_handles,
 	.descs = swap_metric_descs,
 	.names = swap_metric_names,
 	.pmids = swap_metric_pmids,
@@ -914,6 +1225,9 @@ void pcp_def_paging_metrics(struct activity *a)
 	act_add_metric(a, PAGING_PGSTEAL);
 	act_add_metric(a, PAGING_PGPROMOTE);
 	act_add_metric(a, PAGING_PGDEMOTE);
+
+	for (size_t _i = 0; _i < PAGING_METRIC_COUNT; _i++)
+		pcp_alloc_handle(a->metrics, _i, 0, PM_IN_NULL, NULL);
 }
 
 const char *paging_metric_names[] = {
@@ -1002,8 +1316,12 @@ pmDesc paging_metric_descs[] = {
 };
 pmID paging_metric_pmids[PAGING_METRIC_COUNT];
 
+static int paging_handles[PAGING_METRIC_COUNT];
+
 struct act_metrics paging_metrics = {
 	.count = PAGING_METRIC_COUNT,
+	.max_inst	= 1,
+	.handles	= paging_handles,
 	.descs = paging_metric_descs,
 	.names = paging_metric_names,
 	.pmids = paging_metric_pmids,
@@ -1023,6 +1341,9 @@ void pcp_def_io_metrics(struct activity *a)
 	act_add_metric(a, IO_ALLDEV_READBYTES);
 	act_add_metric(a, IO_ALLDEV_WRITEBYTES);
 	act_add_metric(a, IO_ALLDEV_DISCARDBYTES);
+
+	for (size_t _i = 0; _i < IO_METRIC_COUNT; _i++)
+		pcp_alloc_handle(a->metrics, _i, 0, PM_IN_NULL, NULL);
 }
 
 const char *io_metric_names[] = {
@@ -1087,8 +1408,12 @@ pmDesc io_metric_descs[] = {
 };
 pmID io_metric_pmids[IO_METRIC_COUNT];
 
+static int io_handles[IO_METRIC_COUNT];
+
 struct act_metrics io_metrics = {
 	.count = IO_METRIC_COUNT,
+	.max_inst	= 1,
+	.handles	= io_handles,
 	.descs = io_metric_descs,
 	.names = io_metric_names,
 	.pmids = io_metric_pmids,
@@ -1107,6 +1432,7 @@ void pcp_def_ram_memory_metrics(struct activity *a)
 	act_add_metric(a, MEM_PHYS_MB);
 	act_add_metric(a, MEM_PHYS_KB);
 	act_add_metric(a, MEM_UTIL_FREE);
+	act_add_metric(a, MEM_UTIL_SHARED);
 	act_add_metric(a, MEM_UTIL_AVAIL);
 	act_add_metric(a, MEM_UTIL_USED);
 	act_add_metric(a, MEM_UTIL_BUFFER);
@@ -1166,12 +1492,16 @@ void pcp_def_memory_metrics(struct activity *a)
 	if (DISPLAY_SWAP(a->opt_flags)) {
 		pcp_def_swap_memory_metrics(a);
 	}
+
+	for (size_t _i = 0; _i < MEM_METRIC_COUNT; _i++)
+		pcp_alloc_handle(a->metrics, _i, 0, PM_IN_NULL, NULL);
 }
 
 const char *mem_metric_names[] = {
 	[MEM_PHYS_MB] = "hinv.physmem",
 	[MEM_PHYS_KB] = "mem.physmem",
 	[MEM_UTIL_FREE] = "mem.util.free",
+	[MEM_UTIL_SHARED] = "mem.util.shared",
 	[MEM_UTIL_AVAIL] = "mem.util.available",
 	[MEM_UTIL_USED] = "mem.util.used",
 	[MEM_UTIL_BUFFER] = "mem.util.bufmem",
@@ -1206,6 +1536,13 @@ pmDesc mem_metric_descs[] = {
 	},
 	[MEM_UTIL_FREE] = {
 		.pmid = PMID_MEM_UTIL_FREE,
+		.indom = PM_INDOM_NULL,
+		.units = PMI_UNITS(1, 0, 0, PM_SPACE_KBYTE, 0, 0),
+		.type = PM_TYPE_U64,
+		.sem = PM_SEM_INSTANT,
+	},
+	[MEM_UTIL_SHARED] = {
+		.pmid = PMID_MEM_UTIL_SHARED,
 		.indom = PM_INDOM_NULL,
 		.units = PMI_UNITS(1, 0, 0, PM_SPACE_KBYTE, 0, 0),
 		.type = PM_TYPE_U64,
@@ -1326,8 +1663,12 @@ pmDesc mem_metric_descs[] = {
 };
 pmID mem_metric_pmids[MEM_METRIC_COUNT];
 
+static int mem_handles[MEM_METRIC_COUNT];
+
 struct act_metrics mem_metrics = {
 	.count = MEM_METRIC_COUNT,
+	.max_inst	= 1,
+	.handles	= mem_handles,
 	.descs = mem_metric_descs,
 	.names = mem_metric_names,
 	.pmids = mem_metric_pmids,
@@ -1344,6 +1685,9 @@ void pcp_def_ktables_metrics(struct activity *a)
 	act_add_metric(a, KTABLE_FILES);
 	act_add_metric(a, KTABLE_INODES);
 	act_add_metric(a, KTABLE_PTYS);
+
+	for (size_t _i = 0; _i < KTABLE_METRIC_COUNT; _i++)
+		pcp_alloc_handle(a->metrics, _i, 0, PM_IN_NULL, NULL);
 }
 
 const char *ktable_metric_names[] = {
@@ -1384,8 +1728,12 @@ pmDesc ktable_metric_descs[] = {
 };
 pmID ktable_metric_pmids[KTABLE_METRIC_COUNT];
 
+static int ktable_handles[KTABLE_METRIC_COUNT];
+
 struct act_metrics ktable_metrics = {
 	.count = KTABLE_METRIC_COUNT,
+	.max_inst	= 1,
+	.handles	= ktable_handles,
 	.descs = ktable_metric_descs,
 	.names = ktable_metric_names,
 	.pmids = ktable_metric_pmids,
@@ -1408,6 +1756,15 @@ void pcp_def_queue_metrics(struct activity *a)
 	act_add_metric(a, KQUEUE_PROCESSES);
 	act_add_metric(a, KQUEUE_BLOCKED);
 	act_add_metric(a, KQUEUE_LOADAVG);
+
+	/* Scalar metrics use slot 0 */
+	pcp_alloc_handle(a->metrics, KQUEUE_RUNNABLE,  0, PM_IN_NULL, NULL);
+	pcp_alloc_handle(a->metrics, KQUEUE_PROCESSES, 0, PM_IN_NULL, NULL);
+	pcp_alloc_handle(a->metrics, KQUEUE_BLOCKED,   0, PM_IN_NULL, NULL);
+	/* kernel.all.load: inst IDs 1/5/15 → slots 0/1/2 */
+	pcp_alloc_handle(a->metrics, KQUEUE_LOADAVG,   0, 1,  "1 minute");
+	pcp_alloc_handle(a->metrics, KQUEUE_LOADAVG,   1, 5,  "5 minute");
+	pcp_alloc_handle(a->metrics, KQUEUE_LOADAVG,   2, 15, "15 minute");
 }
 
 const char *kqueue_metric_names[] = {
@@ -1504,6 +1861,8 @@ void pcp_def_disk_metrics(struct activity *a)
 	act_add_metric(a, DISK_PERDEV_DISCARDACTIVE);
 	act_add_metric(a, DISK_PERDEV_AVACTIVE);
 	act_add_metric(a, DISK_PERDEV_AVQUEUE);
+
+	pcp_alloc_item_list_handles(a);
 }
 
 const char *disk_metric_names[] = {
@@ -1682,6 +2041,8 @@ void pcp_def_net_dev_metrics(struct activity *a)
 		act_add_metric(a, NET_EPERINTF_INFIFO);
 		act_add_metric(a, NET_EPERINTF_OUTFIFO);
 	}
+
+	pcp_alloc_item_list_handles(a);
 }
 
 const char *netdev_metric_names[] = {
@@ -1864,6 +2225,8 @@ void pcp_def_serial_metrics(struct activity *a)
 		pmsprintf(buf, sizeof(buf), "serial%d", i);
 		pmiAddInstance(PMI_INDOM(60, 35), buf, i);
 	}
+
+	pcp_alloc_item_list_handles(a);
 }
 
 const char *serial_metric_names[] = {
@@ -1947,6 +2310,9 @@ void pcp_def_net_nfs_metrics(struct activity *a)
 	act_add_metric(a, NFSCLIENT_RPCCCNT);
 	act_add_metric(a, NFSCLIENT_RPCRETRANS);
 	act_add_metric(a, NFSCLIENT_REQUESTS);
+
+	for (size_t _i = 0; _i < NFSCLIENT_METRIC_COUNT; _i++)
+		pcp_alloc_handle(a->metrics, _i, 0, PM_IN_NULL, NULL);
 }
 
 const char *nfsclient_metric_names[] = {
@@ -1979,8 +2345,12 @@ pmDesc nfsclient_metric_descs[] = {
 };
 pmID nfsclient_metric_pmids[NFSCLIENT_METRIC_COUNT];
 
+static int nfsclient_handles[NFSCLIENT_METRIC_COUNT];
+
 struct act_metrics nfsclient_metrics = {
 	.count = NFSCLIENT_METRIC_COUNT,
+	.max_inst	= 1,
+	.handles	= nfsclient_handles,
 	.descs = nfsclient_metric_descs,
 	.names = nfsclient_metric_names,
 	.pmids = nfsclient_metric_pmids,
@@ -2011,6 +2381,9 @@ void pcp_def_net_nfsd_metrics(struct activity *a)
 	act_add_metric(a, NFSSERVER_RCHITS);
 	act_add_metric(a, NFSSERVER_RCMISSES);
 	act_add_metric(a, NFSSERVER_REQUESTS);
+
+	for (size_t _i = 0; _i < NFSSERVER_METRIC_COUNT; _i++)
+		pcp_alloc_handle(a->metrics, _i, 0, PM_IN_NULL, NULL);
 }
 
 const char *nfsserver_metric_names[] = {
@@ -2083,8 +2456,12 @@ pmDesc nfsserver_metric_descs[] = {
 };
 pmID nfsserver_metric_pmids[NFSSERVER_METRIC_COUNT];
 
+static int nfsserver_handles[NFSSERVER_METRIC_COUNT];
+
 struct act_metrics nfsserver_metrics = {
 	.count = NFSSERVER_METRIC_COUNT,
+	.max_inst	= 1,
+	.handles	= nfsserver_handles,
 	.descs = nfsserver_metric_descs,
 	.names = nfsserver_metric_names,
 	.pmids = nfsserver_metric_pmids,
@@ -2106,6 +2483,9 @@ void pcp_def_net_sock_metrics(struct activity *a)
 	act_add_metric(a, SOCKET_RAWINUSE);
 	act_add_metric(a, SOCKET_FRAGINUSE);
 	act_add_metric(a, SOCKET_TCPTW);
+
+	for (size_t _i = 0; _i < SOCKET_METRIC_COUNT; _i++)
+		pcp_alloc_handle(a->metrics, _i, 0, PM_IN_NULL, NULL);
 }
 
 const char *socket_metric_names[] = {
@@ -2162,8 +2542,12 @@ pmDesc socket_metric_descs[] = {
 };
 pmID socket_metric_pmids[SOCKET_METRIC_COUNT];
 
+static int socket_handles[SOCKET_METRIC_COUNT];
+
 struct act_metrics socket_metrics = {
 	.count = SOCKET_METRIC_COUNT,
+	.max_inst	= 1,
+	.handles	= socket_handles,
 	.descs = socket_metric_descs,
 	.names = socket_metric_names,
 	.pmids = socket_metric_pmids,
@@ -2187,6 +2571,9 @@ void pcp_def_net_ip_metrics(struct activity *a)
 	act_add_metric(a, NET_IP_REASMOKS);
 	act_add_metric(a, NET_IP_FRAGOKS);
 	act_add_metric(a, NET_IP_FRAGCREATES);
+
+	for (size_t _i = 0; _i < NET_IP_METRIC_COUNT; _i++)
+		pcp_alloc_handle(a->metrics, _i, 0, PM_IN_NULL, NULL);
 }
 
 const char *net_ip_metric_names[] = {
@@ -2259,8 +2646,12 @@ pmDesc net_ip_metric_descs[] = {
 };
 pmID net_ip_metric_pmids[NET_IP_METRIC_COUNT];
 
+static int net_ip_handles[NET_IP_METRIC_COUNT];
+
 struct act_metrics net_ip_metrics = {
 	.count = NET_IP_METRIC_COUNT,
+	.max_inst	= 1,
+	.handles	= net_ip_handles,
 	.descs = net_ip_metric_descs,
 	.names = net_ip_metric_names,
 	.pmids = net_ip_metric_pmids,
@@ -2284,6 +2675,9 @@ void pcp_def_net_eip_metrics(struct activity *a)
 	act_add_metric(a, NET_EIP_OUTNOROUTES);
 	act_add_metric(a, NET_EIP_REASMFAILS);
 	act_add_metric(a, NET_EIP_FRAGFAILS);
+
+	for (size_t _i = 0; _i < NET_EIP_METRIC_COUNT; _i++)
+		pcp_alloc_handle(a->metrics, _i, 0, PM_IN_NULL, NULL);
 }
 
 const char *net_eip_metric_names[] = {
@@ -2356,8 +2750,12 @@ pmDesc net_eip_metric_descs[] = {
 };
 pmID net_eip_metric_pmids[NET_EIP_METRIC_COUNT];
 
+static int net_eip_handles[NET_EIP_METRIC_COUNT];
+
 struct act_metrics net_eip_metrics = {
 	.count = NET_EIP_METRIC_COUNT,
+	.max_inst	= 1,
+	.handles	= net_eip_handles,
 	.descs = net_eip_metric_descs,
 	.names = net_eip_metric_names,
 	.pmids = net_eip_metric_pmids,
@@ -2387,6 +2785,9 @@ void pcp_def_net_icmp_metrics(struct activity *a)
 	act_add_metric(a, NET_ICMP_INADDRMASKREPS);
 	act_add_metric(a, NET_ICMP_OUTADDRMASKS);
 	act_add_metric(a, NET_ICMP_OUTADDRMASKREPS);
+
+	for (size_t _i = 0; _i < NET_ICMP_METRIC_COUNT; _i++)
+		pcp_alloc_handle(a->metrics, _i, 0, PM_IN_NULL, NULL);
 }
 
 const char *net_icmp_metric_names[] = {
@@ -2507,8 +2908,12 @@ pmDesc net_icmp_metric_descs[] = {
 };
 pmID net_icmp_metric_pmids[NET_ICMP_METRIC_COUNT];
 
+static int net_icmp_handles[NET_ICMP_METRIC_COUNT];
+
 struct act_metrics net_icmp_metrics = {
 	.count = NET_ICMP_METRIC_COUNT,
+	.max_inst	= 1,
+	.handles	= net_icmp_handles,
 	.descs = net_icmp_metric_descs,
 	.names = net_icmp_metric_names,
 	.pmids = net_icmp_metric_pmids,
@@ -2536,6 +2941,9 @@ void pcp_def_net_eicmp_metrics(struct activity *a)
 	act_add_metric(a, NET_EICMP_OUTSRCQUENCHS);
 	act_add_metric(a, NET_EICMP_INREDIRECTS);
 	act_add_metric(a, NET_EICMP_OUTREDIRECTS);
+
+	for (size_t _i = 0; _i < NET_EICMP_METRIC_COUNT; _i++)
+		pcp_alloc_handle(a->metrics, _i, 0, PM_IN_NULL, NULL);
 }
 
 const char *net_eicmp_metric_names[] = {
@@ -2640,8 +3048,12 @@ pmDesc net_eicmp_metric_descs[] = {
 };
 pmID net_eicmp_metric_pmids[NET_EICMP_METRIC_COUNT];
 
+static int net_eicmp_handles[NET_EICMP_METRIC_COUNT];
+
 struct act_metrics net_eicmp_metrics = {
 	.count = NET_EICMP_METRIC_COUNT,
+	.max_inst	= 1,
+	.handles	= net_eicmp_handles,
 	.descs = net_eicmp_metric_descs,
 	.names = net_eicmp_metric_names,
 	.pmids = net_eicmp_metric_pmids,
@@ -2661,6 +3073,9 @@ void pcp_def_net_tcp_metrics(struct activity *a)
 	act_add_metric(a, NET_TCP_PASSIVEOPENS);
 	act_add_metric(a, NET_TCP_INSEGS);
 	act_add_metric(a, NET_TCP_OUTSEGS);
+
+	for (size_t _i = 0; _i < NET_TCP_METRIC_COUNT; _i++)
+		pcp_alloc_handle(a->metrics, _i, 0, PM_IN_NULL, NULL);
 }
 
 const char *net_tcp_metric_names[] = {
@@ -2701,8 +3116,12 @@ pmDesc net_tcp_metric_descs[] = {
 };
 pmID net_tcp_metric_pmids[NET_TCP_METRIC_COUNT];
 
+static int net_tcp_handles[NET_TCP_METRIC_COUNT];
+
 struct act_metrics net_tcp_metrics = {
 	.count = NET_TCP_METRIC_COUNT,
+	.max_inst	= 1,
+	.handles	= net_tcp_handles,
 	.descs = net_tcp_metric_descs,
 	.names = net_tcp_metric_names,
 	.pmids = net_tcp_metric_pmids,
@@ -2723,6 +3142,9 @@ void pcp_def_net_etcp_metrics(struct activity *a)
 	act_add_metric(a, NET_ETCP_RETRANSSEGS);
 	act_add_metric(a, NET_ETCP_INERRS);
 	act_add_metric(a, NET_ETCP_OUTRSTS);
+
+	for (size_t _i = 0; _i < NET_ETCP_METRIC_COUNT; _i++)
+		pcp_alloc_handle(a->metrics, _i, 0, PM_IN_NULL, NULL);
 }
 
 const char *net_etcp_metric_names[] = {
@@ -2771,8 +3193,12 @@ pmDesc net_etcp_metric_descs[] = {
 };
 pmID net_etcp_metric_pmids[NET_ETCP_METRIC_COUNT];
 
+static int net_etcp_handles[NET_ETCP_METRIC_COUNT];
+
 struct act_metrics net_etcp_metrics = {
 	.count = NET_ETCP_METRIC_COUNT,
+	.max_inst	= 1,
+	.handles	= net_etcp_handles,
 	.descs = net_etcp_metric_descs,
 	.names = net_etcp_metric_names,
 	.pmids = net_etcp_metric_pmids,
@@ -2792,6 +3218,9 @@ void pcp_def_net_udp_metrics(struct activity *a)
 	act_add_metric(a, NET_UDP_OUTDATAGRAMS);
 	act_add_metric(a, NET_UDP_NOPORTS);
 	act_add_metric(a, NET_UDP_INERRORS);
+
+	for (size_t _i = 0; _i < NET_UDP_METRIC_COUNT; _i++)
+		pcp_alloc_handle(a->metrics, _i, 0, PM_IN_NULL, NULL);
 }
 
 const char *net_udp_metric_names[] = {
@@ -2832,8 +3261,12 @@ pmDesc net_udp_metric_descs[] = {
 };
 pmID net_udp_metric_pmids[NET_UDP_METRIC_COUNT];
 
+static int net_udp_handles[NET_UDP_METRIC_COUNT];
+
 struct act_metrics net_udp_metrics = {
 	.count = NET_UDP_METRIC_COUNT,
+	.max_inst	= 1,
+	.handles	= net_udp_handles,
 	.descs = net_udp_metric_descs,
 	.names = net_udp_metric_names,
 	.pmids = net_udp_metric_pmids,
@@ -2853,6 +3286,9 @@ void pcp_def_net_sock6_metrics(struct activity *a)
 	act_add_metric(a, NET_SOCK6_UDPINUSE);
 	act_add_metric(a, NET_SOCK6_RAWINUSE);
 	act_add_metric(a, NET_SOCK6_FRAGINUSE);
+
+	for (size_t _i = 0; _i < NET_SOCK6_METRIC_COUNT; _i++)
+		pcp_alloc_handle(a->metrics, _i, 0, PM_IN_NULL, NULL);
 }
 
 const char *net_sock6_metric_names[] = {
@@ -2893,8 +3329,12 @@ pmDesc net_sock6_metric_descs[] = {
 };
 pmID net_sock6_metric_pmids[NET_SOCK6_METRIC_COUNT];
 
+static int net_sock6_handles[NET_SOCK6_METRIC_COUNT];
+
 struct act_metrics net_sock6_metrics = {
 	.count = NET_SOCK6_METRIC_COUNT,
+	.max_inst	= 1,
+	.handles	= net_sock6_handles,
 	.descs = net_sock6_metric_descs,
 	.names = net_sock6_metric_names,
 	.pmids = net_sock6_metric_pmids,
@@ -2920,6 +3360,9 @@ void pcp_def_net_ip6_metrics(struct activity *a)
 	act_add_metric(a, NET_IP6_OUTMCASTPKTS);
 	act_add_metric(a, NET_IP6_FRAGOKS);
 	act_add_metric(a, NET_IP6_FRAGCREATES);
+
+	for (size_t _i = 0; _i < NET_IP6_METRIC_COUNT; _i++)
+		pcp_alloc_handle(a->metrics, _i, 0, PM_IN_NULL, NULL);
 }
 
 const char *net_ip6_metric_names[] = {
@@ -3008,8 +3451,12 @@ pmDesc net_ip6_metric_descs[] = {
 };
 pmID net_ip6_metric_pmids[NET_IP6_METRIC_COUNT];
 
+static int net_ip6_handles[NET_IP6_METRIC_COUNT];
+
 struct act_metrics net_ip6_metrics = {
 	.count = NET_IP6_METRIC_COUNT,
+	.max_inst	= 1,
+	.handles	= net_ip6_handles,
 	.descs = net_ip6_metric_descs,
 	.names = net_ip6_metric_names,
 	.pmids = net_ip6_metric_pmids,
@@ -3036,6 +3483,9 @@ void pcp_def_net_eip6_metrics(struct activity *a)
 	act_add_metric(a, NET_EIP6_REASMFAILS);
 	act_add_metric(a, NET_EIP6_FRAGFAILS);
 	act_add_metric(a, NET_EIP6_INTRUNCATEDPKTS );
+
+	for (size_t _i = 0; _i < NET_EIP6_METRIC_COUNT; _i++)
+		pcp_alloc_handle(a->metrics, _i, 0, PM_IN_NULL, NULL);
 }
 
 const char *net_eip6_metric_names[] = {
@@ -3132,8 +3582,12 @@ pmDesc net_eip6_metric_descs[] = {
 };
 pmID net_eip6_metric_pmids[NET_EIP6_METRIC_COUNT];
 
+static int net_eip6_handles[NET_EIP6_METRIC_COUNT];
+
 struct act_metrics net_eip6_metrics = {
 	.count = NET_EIP6_METRIC_COUNT,
+	.max_inst	= 1,
+	.handles	= net_eip6_handles,
 	.descs = net_eip6_metric_descs,
 	.names = net_eip6_metric_names,
 	.pmids = net_eip6_metric_pmids,
@@ -3166,6 +3620,9 @@ void pcp_def_net_icmp6_metrics(struct activity *a)
 	act_add_metric(a, NET_ICMP6_OUTNEIGHBORSOLICITS);
 	act_add_metric(a, NET_ICMP6_INNEIGHBORADVERTISEMENTS);
 	act_add_metric(a, NET_ICMP6_OUTNEIGHBORADVERTISEMENTS);
+
+	for (size_t _i = 0; _i < NET_ICMP6_METRIC_COUNT; _i++)
+		pcp_alloc_handle(a->metrics, _i, 0, PM_IN_NULL, NULL);
 }
 
 const char *net_icmp6_metric_names[] = {
@@ -3310,8 +3767,12 @@ pmDesc net_icmp6_metric_descs[] = {
 };
 pmID net_icmp6_metric_pmids[NET_ICMP6_METRIC_COUNT];
 
+static int net_icmp6_handles[NET_ICMP6_METRIC_COUNT];
+
 struct act_metrics net_icmp6_metrics = {
 	.count = NET_ICMP6_METRIC_COUNT,
+	.max_inst	= 1,
+	.handles	= net_icmp6_handles,
 	.descs = net_icmp6_metric_descs,
 	.names = net_icmp6_metric_names,
 	.pmids = net_icmp6_metric_pmids,
@@ -3338,6 +3799,9 @@ void pcp_def_net_eicmp6_metrics(struct activity *a)
 	act_add_metric(a, NET_EICMP6_OUTREDIRECTS);
 	act_add_metric(a, NET_EICMP6_INPKTTOOBIGS);
 	act_add_metric(a, NET_EICMP6_OUTPKTTOOBIGS);
+
+	for (size_t _i = 0; _i < NET_EICMP6_METRIC_COUNT; _i++)
+		pcp_alloc_handle(a->metrics, _i, 0, PM_IN_NULL, NULL);
 }
 
 const char *net_eicmp6_metric_names[] = {
@@ -3434,8 +3898,12 @@ pmDesc net_eicmp6_metric_descs[] = {
 };
 pmID net_eicmp6_metric_pmids[NET_EICMP6_METRIC_COUNT];
 
+static int net_eicmp6_handles[NET_EICMP6_METRIC_COUNT];
+
 struct act_metrics net_eicmp6_metrics = {
 	.count = NET_EICMP6_METRIC_COUNT,
+	.max_inst	= 1,
+	.handles	= net_eicmp6_handles,
 	.descs = net_eicmp6_metric_descs,
 	.names = net_eicmp6_metric_names,
 	.pmids = net_eicmp6_metric_pmids,
@@ -3455,6 +3923,9 @@ void pcp_def_net_udp6_metrics(struct activity *a)
 	act_add_metric(a, NET_UDP6_OUTDATAGRAMS);
 	act_add_metric(a, NET_UDP6_NOPORTS);
 	act_add_metric(a, NET_UDP6_INERRORS);
+
+	for (size_t _i = 0; _i < NET_UDP6_METRIC_COUNT; _i++)
+		pcp_alloc_handle(a->metrics, _i, 0, PM_IN_NULL, NULL);
 }
 
 const char *net_udp6_metric_names[] = {
@@ -3495,8 +3966,12 @@ pmDesc net_udp6_metric_descs[] = {
 };
 pmID net_udp6_metric_pmids[NET_UDP6_METRIC_COUNT];
 
+static int net_udp6_handles[NET_UDP6_METRIC_COUNT];
+
 struct act_metrics net_udp6_metrics = {
 	.count = NET_UDP6_METRIC_COUNT,
+	.max_inst	= 1,
+	.handles	= net_udp6_handles,
 	.descs = net_udp6_metric_descs,
 	.names = net_udp6_metric_names,
 	.pmids = net_udp6_metric_pmids,
@@ -3516,6 +3991,9 @@ void pcp_def_huge_metrics(struct activity *a)
 	act_add_metric(a, MEM_HUGE_FREEBYTES);
 	act_add_metric(a, MEM_HUGE_RSVDBYTES);
 	act_add_metric(a, MEM_HUGE_SURPBYTES);
+
+	for (size_t _i = 0; _i < MEM_HUGE_METRIC_COUNT; _i++)
+		pcp_alloc_handle(a->metrics, _i, 0, PM_IN_NULL, NULL);
 }
 
 const char *mem_huge_metric_names[] = {
@@ -3556,8 +4034,12 @@ pmDesc mem_huge_metric_descs[] = {
 };
 pmID mem_huge_metric_pmids[MEM_HUGE_METRIC_COUNT];
 
+static int mem_huge_handles[MEM_HUGE_METRIC_COUNT];
+
 struct act_metrics mem_huge_metrics = {
 	.count = MEM_HUGE_METRIC_COUNT,
+	.max_inst	= 1,
+	.handles	= mem_huge_handles,
 	.descs = mem_huge_metric_descs,
 	.names = mem_huge_metric_names,
 	.pmids = mem_huge_metric_pmids,
@@ -3602,6 +4084,8 @@ void pcp_def_pwr_fan_metrics(struct activity *a)
 	act_add_metric(a, POWER_FAN_RPM);
 	act_add_metric(a, POWER_FAN_DRPM);
 	act_add_metric(a, POWER_FAN_DEVICE);
+
+	pcp_alloc_item_list_handles(a);
 }
 
 const char *power_fan_metric_names[] = {
@@ -3680,6 +4164,8 @@ void pcp_def_pwr_temp_metrics(struct activity *a)
 	act_add_metric(a, POWER_TEMP_CELSIUS);
 	act_add_metric(a, POWER_TEMP_PERCENT);
 	act_add_metric(a, POWER_TEMP_DEVICE);
+
+	pcp_alloc_item_list_handles(a);
 }
 
 const char *power_temp_metric_names[] = {
@@ -3758,6 +4244,8 @@ void pcp_def_pwr_in_metrics(struct activity *a)
 	act_add_metric(a, POWER_IN_VOLTAGE);
 	act_add_metric(a, POWER_IN_PERCENT);
 	act_add_metric(a, POWER_IN_DEVICE);
+
+	pcp_alloc_item_list_handles(a);
 }
 
 const char *power_in_metric_names[] = {
@@ -3834,6 +4322,8 @@ void pcp_def_pwr_bat_metrics(struct activity *a)
 
 	act_add_metric(a, POWER_BAT_CAPACITY);
 	act_add_metric(a, POWER_BAT_STATUS);
+
+	pcp_alloc_item_list_handles(a);
 }
 
 const char *power_bat_metric_names[] = {
@@ -3907,6 +4397,8 @@ void pcp_def_pwr_usb_metrics(struct activity *a)
 	act_add_metric(a, POWER_USB_MAXPOWER);
 	act_add_metric(a, POWER_USB_MANUFACTURER);
 	act_add_metric(a, POWER_USB_PRODUCTNAME);
+
+	pcp_alloc_item_list_handles(a);
 }
 
 const char *power_usb_metric_names[] = {
@@ -4013,6 +4505,8 @@ void pcp_def_filesystem_metrics(struct activity *a)
 	act_add_metric(a, FILESYS_FREEFILES);
 	act_add_metric(a, FILESYS_USEDFILES);
 	act_add_metric(a, FILESYS_AVAIL);
+
+	pcp_alloc_item_list_handles(a);
 }
 
 const char *filesys_metric_names[] = {
@@ -4131,6 +4625,8 @@ void pcp_def_fchost_metrics(struct activity *a)
 	act_add_metric(a, FCHOST_OUTFRAMES);
 	act_add_metric(a, FCHOST_INBYTES);
 	act_add_metric(a, FCHOST_OUTBYTES);
+
+	pcp_alloc_item_list_handles(a);
 }
 
 const char *fchost_metric_names[] = {
@@ -4259,14 +4755,39 @@ void pcp_def_psi_metrics(struct activity *a)
 	if (a->id == A_PSI_CPU) {
 		/* Create metrics for A_PSI_CPU */
 		pcp_def_psicpu_metrics(a);
+		/*
+		 * SOMETOTAL is scalar (PM_IN_NULL, slot 0).
+		 * SOMEAVG instances have PCP inst IDs 10/60/300 mapped to
+		 * sequential slots 0/1/2; use pcp_find_slot() at write time.
+		 */
+		pcp_alloc_handle(a->metrics, PSI_CPU_SOMETOTAL, 0, PM_IN_NULL, NULL);
+		pcp_alloc_handle(a->metrics, PSI_CPU_SOMEAVG,   0, 10,  "10 second");
+		pcp_alloc_handle(a->metrics, PSI_CPU_SOMEAVG,   1, 60,  "1 minute");
+		pcp_alloc_handle(a->metrics, PSI_CPU_SOMEAVG,   2, 300, "5 minute");
 	}
 	else if (a->id == A_PSI_IO) {
 		/* Create metrics for A_PSI_IO */
 		pcp_def_psiio_metrics(a);
+		pcp_alloc_handle(a->metrics, PSI_IO_SOMETOTAL, 0, PM_IN_NULL, NULL);
+		pcp_alloc_handle(a->metrics, PSI_IO_SOMEAVG,   0, 10,  "10 second");
+		pcp_alloc_handle(a->metrics, PSI_IO_SOMEAVG,   1, 60,  "1 minute");
+		pcp_alloc_handle(a->metrics, PSI_IO_SOMEAVG,   2, 300, "5 minute");
+		pcp_alloc_handle(a->metrics, PSI_IO_FULLTOTAL, 0, PM_IN_NULL, NULL);
+		pcp_alloc_handle(a->metrics, PSI_IO_FULLAVG,   0, 10,  "10 second");
+		pcp_alloc_handle(a->metrics, PSI_IO_FULLAVG,   1, 60,  "1 minute");
+		pcp_alloc_handle(a->metrics, PSI_IO_FULLAVG,   2, 300, "5 minute");
 	}
 	else if (a->id == A_PSI_MEM) {
 		/* Create metrics for A_PSI_MEM */
 		pcp_def_psimem_metrics(a);
+		pcp_alloc_handle(a->metrics, PSI_MEM_SOMETOTAL, 0, PM_IN_NULL, NULL);
+		pcp_alloc_handle(a->metrics, PSI_MEM_SOMEAVG,   0, 10,  "10 second");
+		pcp_alloc_handle(a->metrics, PSI_MEM_SOMEAVG,   1, 60,  "1 minute");
+		pcp_alloc_handle(a->metrics, PSI_MEM_SOMEAVG,   2, 300, "5 minute");
+		pcp_alloc_handle(a->metrics, PSI_MEM_FULLTOTAL, 0, PM_IN_NULL, NULL);
+		pcp_alloc_handle(a->metrics, PSI_MEM_FULLAVG,   0, 10,  "10 second");
+		pcp_alloc_handle(a->metrics, PSI_MEM_FULLAVG,   1, 60,  "1 minute");
+		pcp_alloc_handle(a->metrics, PSI_MEM_FULLAVG,   2, 300, "5 minute");
 	}
 }
 

@@ -320,7 +320,6 @@ int check_alt_sa_dir(char *datafile, int d_off, int sa_name)
  */
 int check_alt_sa_pcp_dir(char *datafile)
 {
-	struct stat	st;
 	const char	*bn;
 	char		archive[MAX_FILE_LEN];
 
@@ -1091,11 +1090,12 @@ int check_net_dev_reg(struct activity *a, int curr, int ref, int pos)
 {
 	struct stats_net_dev *sndc, *sndp;
 	int j0, j = pos;
+	int iters = 0;
 
 	if (!a->nr[ref])
 		/*
 		 * No items found in previous iteration:
-		 * Current interface is necessarily new.
+		 * Current item is necessarily new.
 		 */
 		return -1;
 
@@ -1171,6 +1171,8 @@ int check_net_dev_reg(struct activity *a, int curr, int ref, int pos)
 			}
 			return j;
 		}
+		if (iters++ > a->nr[ref])
+			break;
 		if (++j >= a->nr[ref]) {
 			j = 0;
 		}
@@ -1204,11 +1206,12 @@ int check_net_edev_reg(struct activity *a, int curr, int ref, int pos)
 {
 	struct stats_net_edev *snedc, *snedp;
 	int j0, j = pos;
+	int iters = 0;
 
 	if (!a->nr[ref])
 		/*
 		 * No items found in previous iteration:
-		 * Current interface is necessarily new.
+		 * Current item is necessarily new.
 		 */
 		return -1;
 
@@ -1244,6 +1247,8 @@ int check_net_edev_reg(struct activity *a, int curr, int ref, int pos)
 
 			return j;
 		}
+		if (iters++ > a->nr[ref])
+			break;
 		if (++j >= a->nr[ref]) {
 			j = 0;
 		}
@@ -1276,6 +1281,7 @@ int check_disk_reg(struct activity *a, int curr, int ref, int pos)
 {
 	struct stats_disk *sdc, *sdp;
 	int j0, j = pos;
+	int iters = 0;
 
 	if (!a->nr[ref])
 		/*
@@ -1292,6 +1298,10 @@ int check_disk_reg(struct activity *a, int curr, int ref, int pos)
 	sdc = (struct stats_disk *) ((char *) a->buf[curr] + pos * a->msize);
 
 	do {
+		if (iters++ >= a->nr[ref])
+			/* Safety: scanned all reference entries, not found */
+			break;
+
 		sdp = (struct stats_disk *) ((char *) a->buf[ref] + j * a->msize);
 
 		if ((sdc->major == sdp->major) &&

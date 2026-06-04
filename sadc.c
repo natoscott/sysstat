@@ -105,11 +105,11 @@ set_pcp_default_archive(const char *safile, char *out, size_t len)
 	datefrag = (strncmp(base, "sa", 2) == 0) ? base + 2 : base;
 
 	/* /var/log/sa/pcp<DD>/ */
-	snprintf(pcp_dir, sizeof(pcp_dir), "%s/pcp%s", dir, datefrag);
+	pmsprintf(pcp_dir, sizeof(pcp_dir), "%s/pcp%s", dir, datefrag);
 	mkdir(pcp_dir, 0755);	/* harmless if already exists */
 
 	/* Archive base: /var/log/sa/pcp<DD>/pcp<DD> */
-	snprintf(out, len, "%s/pcp%s", pcp_dir, datefrag);
+	pmsprintf(out, len, "%s/pcp%s", pcp_dir, datefrag);
 }
 #endif /* HAVE_PMI_APPEND */
 
@@ -1183,10 +1183,7 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 				(*act[p]->f_pcp_print)(act[p], 0);
 			}
 			{
-				int __sts = pmiHighResWrite((int64_t) record_hdr.ust_time, 0);
-				if (__sts < 0) {
-					fprintf(stderr, _("PCP write error: %s\n"),
-						pmiErrStr(__sts));
+				if (pcp_write_sadc_sample(record_hdr.ust_time, flags) < 0) {
 					if (WRITE_PCP_ONLY(flags))
 						exit(4);
 					flags &= ~S_F_PCP_OUTPUT;
@@ -1243,17 +1240,17 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 			if (WRITE_PCP_OUTPUT(flags)) {
 				int p;
 
-				pmiEnd();
+				pcp_close_sadc_archive();
 				set_pcp_default_archive(ofile, pcp_archive,
 							sizeof(pcp_archive));
-				pmiStart(pcp_archive, PMI_APPEND);
+				pcp_open_sadc_archive(pcp_archive, &file_hdr);
 				for (p = 0; p < NR_ACT; p++) {
 					if (!IS_COLLECTED(act[p]->options) ||
 					    !act[p]->f_pcp_print)
 						continue;
 					(*act[p]->f_pcp_print)(act[p], 0);
 				}
-				pmiHighResWrite((int64_t) record_hdr.ust_time, 0);
+				pcp_write_sadc_sample(record_hdr.ust_time, flags);
 			}
 #endif /* HAVE_PMI_APPEND */
 
@@ -1306,7 +1303,7 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 	CLOSE(ofd);
 #ifdef HAVE_PMI_APPEND
 	if (WRITE_PCP_OUTPUT(flags))
-		pmiEnd();
+		pcp_close_sadc_archive();
 #endif
 }
 
@@ -1592,7 +1589,7 @@ int main(int argc, char **argv)
 		 * PMI_APPEND falls back silently to creating a new archive
 		 * when the files don't yet exist, so use it unconditionally.
 		 */
-		sts = pmiStart(pcp_archive, PMI_APPEND);
+		sts = pcp_open_sadc_archive(pcp_archive, &file_hdr);
 		if (sts < 0) {
 			fprintf(stderr,
 				_("Cannot open PCP archive %s: %s\n"),
@@ -1603,9 +1600,6 @@ int main(int argc, char **argv)
 			goto pcp_init_done;
 		}
 
-		pmiSetHostname(file_hdr.sa_nodename);
-		pmiSetTimezone(file_hdr.sa_tzname);
-
 		/*
 		 * Set S_F_SINCE_BOOT so that get_global_cpu_statistics() does
 		 * not mark per-CPU data as "offline" simply because the previous
@@ -1614,54 +1608,8 @@ int main(int argc, char **argv)
 		 */
 		flags |= S_F_SINCE_BOOT;
 
-		/*
-		 * Register and pre-stage the file header metrics that sar
-		 * reads to print the report header (CPU count, uname info).
-		 * These will be written to the archive on the first pmiWrite.
-		 * They mirror what sadf writes in its F_BEGIN handler.
-		 */
-		{
-			char hbuf[64];
-
-			pmiAddMetric("hinv.ncpu",
-				     pmiID(60, 0, 32), PM_TYPE_U32,
-				     PM_INDOM_NULL, PM_SEM_DISCRETE,
-				     pmiUnits(0, 0, 0, 0, 0, 0));
-			pmsprintf(hbuf, sizeof(hbuf), "%u",
-				  file_hdr.sa_cpu_nr > 1 ?
-				  file_hdr.sa_cpu_nr - 1 : 1);
-			pmiPutValue("hinv.ncpu", NULL, hbuf);
-
-			pmiAddMetric("kernel.uname.sysname",
-				     pmiID(60, 12, 2), PM_TYPE_STRING,
-				     PM_INDOM_NULL, PM_SEM_DISCRETE,
-				     pmiUnits(0, 0, 0, 0, 0, 0));
-			pmiPutValue("kernel.uname.sysname", NULL,
-				    file_hdr.sa_sysname);
-
-			pmiAddMetric("kernel.uname.release",
-				     pmiID(60, 12, 0), PM_TYPE_STRING,
-				     PM_INDOM_NULL, PM_SEM_DISCRETE,
-				     pmiUnits(0, 0, 0, 0, 0, 0));
-			pmiPutValue("kernel.uname.release", NULL,
-				    file_hdr.sa_release);
-
-			pmiAddMetric("kernel.uname.machine",
-				     pmiID(60, 12, 3), PM_TYPE_STRING,
-				     PM_INDOM_NULL, PM_SEM_DISCRETE,
-				     pmiUnits(0, 0, 0, 0, 0, 0));
-			pmiPutValue("kernel.uname.machine", NULL,
-				    file_hdr.sa_machine);
-
-			pmiAddMetric("kernel.uname.nodename",
-				     pmiID(60, 12, 4), PM_TYPE_STRING,
-				     PM_INDOM_NULL, PM_SEM_DISCRETE,
-				     pmiUnits(0, 0, 0, 0, 0, 0));
-			pmiPutValue("kernel.uname.nodename", NULL,
-				    file_hdr.sa_nodename);
-		}
-
-		/* sadc self-description metrics and archive provenance label */
+		/* File-header metrics and sadc self-description */
+		pcp_write_file_header_metrics(&file_hdr);
 		pcp_write_sadc_header(interval);
 
 		/*

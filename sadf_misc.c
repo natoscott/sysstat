@@ -58,14 +58,7 @@ extern unsigned int svg_colors[][SVG_COL_PALETTE_SIZE];
 void pcp_write_data(struct record_header *record_hdr, unsigned int flags)
 {
 #ifdef HAVE_PCP
-	int rc;
-	unsigned long long utc_sec = record_hdr->ust_time;
-
-	/* Write data to PCP archive */
-	if ((rc = pmiWrite(utc_sec, 0)) < 0) {
-		fprintf(stderr, "PCP: pmiWrite: %s\n", pmiErrStr(rc));
-		exit(4);
-	}
+	pcp_write_sadf_sample(record_hdr->ust_time);
 #endif
 }
 
@@ -283,32 +276,8 @@ __printf_funct_t print_pcp_restart(int *tab, int action, char *cur_date, char *c
 				   struct record_header *record_hdr)
 {
 #ifdef HAVE_PCP
-	static int def_metrics = FALSE;
-	char buf[64];
-
-	if (action & F_BEGIN) {
-		if (!def_metrics) {
-			pmiAddMetric("system.restart.count",
-				     PM_IN_NULL, PM_TYPE_U32, PM_INDOM_NULL, PM_SEM_DISCRETE,
-				     pmiUnits(0, 0, 1, 0, 0, PM_COUNT_ONE));
-
-			pmiAddMetric("system.restart.ncpu",
-				     PM_IN_NULL, PM_TYPE_U32, PM_INDOM_NULL, PM_SEM_DISCRETE,
-				     pmiUnits(0, 0, 1, 0, 0, PM_COUNT_ONE));
-
-			def_metrics = TRUE;
-		}
-	}
-	if (action & F_MAIN) {
-		pmiPutValue("system.restart.count", NULL, "1");
-
-		snprintf(buf, sizeof(buf), "%u",
-			 file_hdr->sa_cpu_nr > 1 ? file_hdr->sa_cpu_nr - 1 : 1);
-		pmiPutValue("system.restart.ncpu", NULL, buf);
-
-		/* Write data to PCP archive */
-		pcp_write_data(record_hdr, flags);
-	}
+	if (action & F_MAIN)
+		pcp_write_sadf_restart(file_hdr, record_hdr->ust_time);
 #endif /* HAVE_PCP */
 }
 
@@ -534,23 +503,8 @@ __printf_funct_t print_pcp_comment(int *tab, int action, char *cur_date, char *c
 				   struct record_header *record_hdr)
 {
 #ifdef HAVE_PCP
-	static int def_metrics = FALSE;
-
-	if (action & F_BEGIN) {
-		if (!def_metrics) {
-			pmiAddMetric("system.comment.value",
-				     PM_IN_NULL, PM_TYPE_STRING, PM_INDOM_NULL, PM_SEM_DISCRETE,
-				     pmiUnits(0, 0, 0, 0, 0, 0));
-
-			def_metrics = TRUE;
-		}
-	}
-	if (action & F_MAIN) {
-		pmiPutValue("system.comment.value", NULL, comment);
-
-		/* Write data to PCP archive */
-		pcp_write_data(record_hdr, flags);
-	}
+	if (action & F_MAIN)
+		pcp_write_sadf_comment(comment, record_hdr->ust_time);
 #endif /* HAVE_PCP */
 }
 
@@ -1242,6 +1196,12 @@ __printf_funct_t print_hdr_header(void *parm, int action, char *dfile, char *my_
 		char cur_time[TIMESTAMP_LEN];
 		struct file_activity *fal;
 
+		if (!file_magic) {
+			/* Called from PCP archive read path — no native magic header */
+			printf(_("System activity data file: %s (PCP archive)\n"), dfile);
+			return;
+		}
+
 		printf(_("System activity data file: %s (%#x)\n"),
 		       dfile, file_magic->format_magic);
 
@@ -1450,57 +1410,11 @@ __printf_funct_t print_pcp_header(void *parm, int action, char *dfile, char *my_
 				  struct file_activity *file_actlst)
 {
 #ifdef HAVE_PCP
-	char buf[64];
-	unsigned long long utc_sec = file_hdr->sa_ust_time;
+	if (action & F_BEGIN)
+		pcp_open_sadf_archive(dfile, file_hdr);
 
-	if (action & F_BEGIN) {
-		/* Create new PCP context */
-		pmiStart(dfile, FALSE);
-
-		/* Set timezone */
-		pmiSetTimezone(file_hdr->sa_tzname);
-
-		/* Save hostname */
-		pmiSetHostname(file_hdr->sa_nodename);
-
-		/* Save number of CPU in PCP archive */
-		pmiAddMetric("hinv.ncpu",
-			     pmiID(60, 0, 32), PM_TYPE_U32, PM_INDOM_NULL,
-			     PM_SEM_DISCRETE, pmiUnits(0, 0, 0, 0, 0, 0));
-		snprintf(buf, sizeof(buf), "%u",
-			 file_hdr->sa_cpu_nr > 1 ? file_hdr->sa_cpu_nr - 1 : 1);
-		pmiPutValue("hinv.ncpu", NULL, buf);
-
-		/* Save uname(2) information */
-		pmiAddMetric("kernel.uname.release",
-			     pmiID(60, 12, 0), PM_TYPE_STRING, PM_INDOM_NULL,
-			     PM_SEM_DISCRETE, pmiUnits(0, 0, 0, 0, 0, 0));
-		pmiPutValue("kernel.uname.release", NULL, file_hdr->sa_release);
-		pmiAddMetric("kernel.uname.sysname",
-			     pmiID(60, 12, 2), PM_TYPE_STRING, PM_INDOM_NULL,
-			     PM_SEM_DISCRETE, pmiUnits(0, 0, 0, 0, 0, 0));
-		pmiPutValue("kernel.uname.sysname", NULL, file_hdr->sa_sysname);
-		pmiAddMetric("kernel.uname.machine",
-			     pmiID(60, 12, 3), PM_TYPE_STRING, PM_INDOM_NULL,
-			     PM_SEM_DISCRETE, pmiUnits(0, 0, 0, 0, 0, 0));
-		pmiPutValue("kernel.uname.machine", NULL, file_hdr->sa_machine);
-		pmiAddMetric("kernel.uname.nodename",
-			     pmiID(60, 12, 4), PM_TYPE_STRING, PM_INDOM_NULL,
-			     PM_SEM_DISCRETE, pmiUnits(0, 0, 0, 0, 0, 0));
-		pmiPutValue("kernel.uname.nodename", NULL, file_hdr->sa_nodename);
-	}
-
-	if (action & F_END) {
-		if (action & F_BEGIN) {
-			int rc;
-
-			if ((rc = pmiWrite(utc_sec, 0)) < 0) {
-				fprintf(stderr, "PCP: pmiWrite: %s\n", pmiErrStr(rc));
-				exit(4);
-			}
-		}
-		pmiEnd();
-	}
+	if (action & F_END)
+		pcp_close_sadf_archive((action & F_BEGIN) ? file_hdr->sa_ust_time : 0);
 #endif
 }
 
@@ -1527,7 +1441,7 @@ pcp_populate_file_hdr_sadf(int ctxid)
 		return;
 
 	file_hdr.sa_ust_time = (unsigned long long) label.start.tv_sec;
-	if (label.timezone && label.timezone[0])
+	if (label.timezone[0])
 		pmsprintf(file_hdr.sa_tzname, sizeof(file_hdr.sa_tzname),
 			  "%s", label.timezone);
 
@@ -1548,6 +1462,11 @@ pcp_populate_file_hdr_sadf(int ctxid)
 			file_hdr.sa_cpu_nr = (unsigned int)
 				pcp_read_u32(vset, 0, metrics->descs,
 					     FILE_HEADER_CPU_COUNT) + 1;
+		}
+		else if (vset->pmid == PMID_FILE_HEADER_KERNEL_HERTZ) {
+			file_hdr.sa_hz = (unsigned long)
+				pcp_read_u32(vset, 0, metrics->descs,
+					     FILE_HEADER_KERNEL_HERTZ);
 		}
 		else if (vset->pmid == PMID_FILE_HEADER_UNAME_NODENAME) {
 			if ((s = pcp_read_str(vset, 0, metrics->descs, FILE_HEADER_UNAME_NODENAME))) {
@@ -1773,25 +1692,23 @@ read_stats_from_pcpfile_sadf(int ctxid, char *from_file)
 	long		cnt = count ? count : -1L;
 	int		numpmids, i, p, j, sts;
 	struct timespec	start = {0};
-
 	pcp_populate_file_hdr_sadf(ctxid);
 
 	/*
-	 * Pre-select all activities that have PCP metrics defined.
-	 * check_pcpfile_actlist() will then deselect those whose metrics
-	 * are absent from the archive.  (In the native path sadf relies on
-	 * the file's activity list instead of AO_SELECTED.)
+	 * Respect the activity selection already set by the user's options
+	 * (e.g. sadf ... -- -u selects only CPU).  For each selected activity
+	 * that has PCP metrics, fix up nr_ini / nr2 so allocate_structures()
+	 * makes a minimal initial allocation; pcp_read_* grows buffers via
+	 * reallocate_buffers() as instance counts are discovered from pmFetch.
 	 */
 	for (p = 0; p < NR_ACT; p++) {
-		if (act[p]->metrics)
-			act[p]->options |= AO_SELECTED;
+		if (act[p]->metrics && IS_SELECTED(act[p]->options)) {
+			act[p]->nr_ini = 1;
+			if (act[p]->nr2 <= 0)
+				act[p]->nr2 = 1;
+		}
 	}
-	check_pcpfile_actlist(from_file, act, flags);
 
-	/*
-	 * Allocate activity buffers AFTER check_pcpfile_actlist() has set
-	 * nr_ini from the archive's instance domains.
-	 */
 	allocate_structures(act, flags);
 
 	allocate_bitmaps(act);
@@ -1817,7 +1734,7 @@ read_stats_from_pcpfile_sadf(int ctxid, char *from_file)
 	for (p = 0; p < NR_ACT; p++) {
 		if (!IS_SELECTED(act[p]->options) || !act[p]->metrics)
 			continue;
-		for (i = 0; i < act[p]->metrics->count; i++)
+		for (i = 0; i < (int)act[p]->metrics->count; i++)
 			pmids[j++] = act[p]->metrics->descs[i].pmid;
 	}
 

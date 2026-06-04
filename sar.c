@@ -87,6 +87,8 @@ struct record_header record_hdr[3];
 
 /* Information from PCP archive */
 pmLogLabel log_label;
+/* Recording interval from sadc.interval metric (seconds); 0 = unknown */
+static long pcp_archive_interval = 0;
 
 /*
  * Activity sequence.
@@ -1267,7 +1269,7 @@ void read_stats_from_rawfile(char from_file[])
  * @from_file	Input file name.
  ***************************************************************************
  */
-int print_report_hdr_pcpfile(int ctxid, char from_file[])
+int print_report_hdr_pcpfile(int ctxid, const char from_file[])
 {
 	pmValueSet		*values;
 	pmResult		*result;
@@ -1370,9 +1372,50 @@ int print_report_hdr_pcpfile(int ctxid, char from_file[])
 	free(machine);
 
 	if (cpu_count == 0) {
-		fprintf(stderr, 
+		fprintf(stderr,
 			_("Missing processor count metric in archive %s\n"),
 			from_file);
+	}
+
+	/* Display sadc self-description if present (sadc -O pcp archives) */
+	{
+		char	*sadc_version = NULL;
+		long	sadc_interval = 0;
+
+		pcp_read_sadc_metrics(&sadc_version, &sadc_interval);
+		if (sadc_version) {
+			printf(_("Collected by sysstat %s"), sadc_version);
+			if (sadc_interval > 0)
+				printf(_(", %ld-second interval"), sadc_interval);
+			printf("\n");
+			free(sadc_version);
+		}
+		if (sadc_interval > 0)
+			pcp_archive_interval = sadc_interval;
+	}
+
+	/*
+	 * If interval is still unknown (no sadc.interval metric — e.g. archives
+	 * created by "sadf -l"), derive it from the gap between the first two
+	 * consecutive samples in the archive.
+	 */
+	if (pcp_archive_interval == 0) {
+		/* Derive interval from two consecutive samples using kernel.all.cpu.user
+		 * (PMID known; no name lookup needed for an archive context fetch) */
+		pmResult *r1 = NULL, *r2 = NULL;
+		pmID cpu_id = PMID_CPU_ALLCPU_USER;
+
+		pmSetMode(PM_MODE_FORW, &log_label.start, NULL);
+		if (pmFetch(1, &cpu_id, &r1) >= 0) {
+			if (pmFetch(1, &cpu_id, &r2) >= 0) {
+				long gap = r2->timestamp.tv_sec - r1->timestamp.tv_sec;
+				if (gap > 0)
+					pcp_archive_interval = gap;
+				pmFreeResult(r2);
+			}
+			pmFreeResult(r1);
+		}
+		pmSetMode(PM_MODE_FORW, &log_label.start, NULL);
 	}
 
 	return 1;	/* success */
@@ -1400,15 +1443,21 @@ int print_report_hdr_pcpfile(int ctxid, char from_file[])
  ***************************************************************************
  */
 int handle_curr_act_pcpstats(struct timespec *now, struct timespec *end,
-		int *curr, long *cnt, int rows, int p, int *reset, char *file)
+		int *curr, long *cnt, int rows, int p, int *reset, const char *file)
 {
 	pmID *tp, *pmids = NULL;
 	pmResult *result;
-	struct timespec delta = {60*10, 0};
+	/*
+	 * PM_MODE_FORW returns raw cumulative counter values as stored in the
+	 * archive, which is what sar needs to compute its own rates.
+	 * PM_MODE_INTERP would convert counters to rates, breaking sar's math.
+	 * The delta is unused in PM_MODE_FORW but kept for the pmSetMode call.
+	 */
+	struct timespec delta = {0, 0};
 	struct act_metrics *metrics = act[p]->metrics;
 	unsigned int act_id = act[p]->id;
 	unsigned long lines = 0;
-	int numpmids, mode = PM_MODE_INTERP;
+	int numpmids, mode = PM_MODE_FORW;
 	int sts, i, j, davg = 0, next, inc = 0;
 
 	if ((sts = pmSetMode(mode, now, &delta)) < 0) {
@@ -1522,7 +1571,7 @@ int handle_curr_act_pcpstats(struct timespec *now, struct timespec *end,
  * @from_file	Input file name.
  ***************************************************************************
  */
-void read_stats_from_pcpfile(int ctxid, char from_file[])
+void read_stats_from_pcpfile(int ctxid, const char from_file[])
 {
 	struct timespec start = {0}, end = {PM_MAX_TIME_T, 0};
 	long cnt = 1;
@@ -1564,8 +1613,20 @@ void read_stats_from_pcpfile(int ctxid, char from_file[])
 		return;
 	}
 
-	/* Check that needed metrics exist in the archive for each activity */
-	check_pcpfile_actlist(from_file, act, flags);
+	/*
+	 * Use PMIDs from our descriptor tables directly — no pmLookupName.
+	 * Set nr_ini = nr2 = 1 for all PCP activities so allocate_structures
+	 * makes a minimal initial allocation; pcp_read_* functions grow
+	 * buffers via reallocate_buffers as actual instance counts are
+	 * discovered from pmFetch results.
+	 */
+	for (i = 0; i < NR_ACT; i++) {
+		if (act[i]->metrics) {
+			act[i]->nr_ini = 1;
+			if (act[i]->nr2 <= 0)
+				act[i]->nr2 = 1;
+		}
+	}
 
 	/* Perform required allocations */
 	allocate_structures(act, flags);

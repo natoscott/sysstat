@@ -1,7 +1,7 @@
 /*
  * pcp_stats.c: Functions used to read and write PCP archives.
  * (C) 2019-2025 by Sebastien GODARD (sysstat <at> orange.fr)
- * (C) 2023-2024 Red Hat, Inc.
+ * (C) 2023-2026 Red Hat, Inc.
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -166,6 +166,21 @@ void pcp_reallocate_buffers(pmValueSet *values, struct activity *a, int curr)
 }
 
 /*
+ * Find the handle-array slot for a named instance (disk, NIC, sensor, etc.)
+ * by scanning the activity's item_list.  Returns 0 if not found.
+ */
+static size_t pcp_slot_for_item(struct sa_item *item_list, const char *name)
+{
+	struct sa_item *list;
+	size_t slot = 0;
+
+	for (list = item_list; list != NULL; list = list->next, slot++)
+		if (!strcmp(list->item_name, name))
+			return slot;
+	return 0;
+}
+
+/*
  ***************************************************************************
  * Write CPU statistics in PCP format.
  *
@@ -176,11 +191,13 @@ void pcp_reallocate_buffers(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_cpu_stats(struct activity *a, int curr)
 {
-	int i;
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
+	int i, handle;
+	size_t slot;
 	unsigned long long deltot_jiffies = 1;
-	char buf[64], cpuno[64];
+	char cpuno[64];
 	unsigned char offline_cpu_bitmap[BITMAP_SIZE(NR_CPUS)] = {0};
-	char *str;
 	struct stats_cpu *scc, *scp;
 
 	/*
@@ -213,8 +230,6 @@ __print_funct_t pcp_print_cpu_stats(struct activity *a, int curr)
 
 		if (!i) {
 			/* This is CPU "all" */
-			str = NULL;
-
 			if (a->nr_ini == 1) {
 				/*
 				 * This is a UP machine. In this case
@@ -229,7 +244,6 @@ __print_funct_t pcp_print_cpu_stats(struct activity *a, int curr)
 		}
 		else {
 			sprintf(cpuno, "cpu%d", i - 1);
-			str = cpuno;
 
 			/*
 			 * Recalculate interval for current proc.
@@ -239,67 +253,90 @@ __print_funct_t pcp_print_cpu_stats(struct activity *a, int curr)
 
 			if (!deltot_jiffies) {
 				/* Current CPU is tickless */
-				pmiPutValue("kernel.percpu.cpu.user", cpuno, "0");
-				pmiPutValue("kernel.percpu.cpu.nice", cpuno, "0");
-				pmiPutValue("kernel.percpu.cpu.sys", cpuno, "0");
-				pmiPutValue("kernel.percpu.cpu.wait.total", cpuno, "0");
-				pmiPutValue("kernel.percpu.cpu.steal", cpuno, "0");
-				pmiPutValue("kernel.percpu.cpu.irq.hard", cpuno, "0");
-				pmiPutValue("kernel.percpu.cpu.irq.soft", cpuno, "0");
-				pmiPutValue("kernel.percpu.cpu.guest", cpuno, "0");
-				pmiPutValue("kernel.percpu.cpu.guest_nice", cpuno, "0");
-				pmiPutValue("kernel.percpu.cpu.idle", cpuno, "100");
-				pmiPutValue("kernel.percpu.interrupts", cpuno, "0");
+				slot = pcp_find_slot(m, i - 1);
+				atom.ull = 0;
+				handle = ACT_HANDLE(m, CPU_PERCPU_USER, slot);
+				pmiPutAtomValueHandle(handle, &atom);
+				handle = ACT_HANDLE(m, CPU_PERCPU_NICE, slot);
+				pmiPutAtomValueHandle(handle, &atom);
+				handle = ACT_HANDLE(m, CPU_PERCPU_SYS, slot);
+				pmiPutAtomValueHandle(handle, &atom);
+				handle = ACT_HANDLE(m, CPU_PERCPU_WAITTOTAL, slot);
+				pmiPutAtomValueHandle(handle, &atom);
+				handle = ACT_HANDLE(m, CPU_PERCPU_STEAL, slot);
+				pmiPutAtomValueHandle(handle, &atom);
+				handle = ACT_HANDLE(m, CPU_PERCPU_IRQHARD, slot);
+				pmiPutAtomValueHandle(handle, &atom);
+				handle = ACT_HANDLE(m, CPU_PERCPU_IRQSOFT, slot);
+				pmiPutAtomValueHandle(handle, &atom);
+				handle = ACT_HANDLE(m, CPU_PERCPU_GUEST, slot);
+				pmiPutAtomValueHandle(handle, &atom);
+				handle = ACT_HANDLE(m, CPU_PERCPU_GUESTNICE, slot);
+				pmiPutAtomValueHandle(handle, &atom);
+				atom.ull = 100;
+				handle = ACT_HANDLE(m, CPU_PERCPU_IDLE, slot);
+				pmiPutAtomValueHandle(handle, &atom);
+				atom.ull = 0;
+				handle = ACT_HANDLE(m, CPU_PERCPU_CPU_INTR, slot);
+				pmiPutAtomValueHandle(handle, &atom);
 
 				continue;
 			}
 		}
 
-		pmsprintf(buf, sizeof(buf), "%llu", scc->cpu_user - scc->cpu_guest);
-		pmiPutValue(i ? "kernel.percpu.cpu.user" : "kernel.all.cpu.user", str, buf);
+		slot = i ? pcp_find_slot(m, i - 1) : 0;
 
-		pmsprintf(buf, sizeof(buf), "%llu", scc->cpu_nice - scc->cpu_guest_nice);
-		pmiPutValue(i ? "kernel.percpu.cpu.nice" : "kernel.all.cpu.nice", str, buf);
+		atom.ull = JIFFIES_TO_MSEC(scc->cpu_user - scc->cpu_guest);
+		handle = ACT_HANDLE(m, i ? CPU_PERCPU_USER : CPU_ALLCPU_USER, slot);
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", scc->cpu_sys);
-		pmiPutValue(i ? "kernel.percpu.cpu.sys" : "kernel.all.cpu.sys", str, buf);
+		atom.ull = JIFFIES_TO_MSEC(scc->cpu_nice - scc->cpu_guest_nice);
+		handle = ACT_HANDLE(m, i ? CPU_PERCPU_NICE : CPU_ALLCPU_NICE, slot);
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", scc->cpu_iowait);
-		pmiPutValue(i ? "kernel.percpu.cpu.wait.total" : "kernel.all.cpu.wait.total", str, buf);
+		atom.ull = JIFFIES_TO_MSEC(scc->cpu_sys);
+		handle = ACT_HANDLE(m, i ? CPU_PERCPU_SYS : CPU_ALLCPU_SYS, slot);
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", scc->cpu_steal);
-		pmiPutValue(i ? "kernel.percpu.cpu.steal" : "kernel.all.cpu.steal", str, buf);
+		atom.ull = JIFFIES_TO_MSEC(scc->cpu_iowait);
+		handle = ACT_HANDLE(m, i ? CPU_PERCPU_WAITTOTAL : CPU_ALLCPU_WAITTOTAL, slot);
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", scc->cpu_hardirq + scc->cpu_softirq);
-		pmiPutValue(i ? "kernel.percpu.cpu.irq.total" : "kernel.all.cpu.irq.total", str, buf);
+		atom.ull = JIFFIES_TO_MSEC(scc->cpu_steal);
+		handle = ACT_HANDLE(m, i ? CPU_PERCPU_STEAL : CPU_ALLCPU_STEAL, slot);
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", scc->cpu_hardirq);
-		pmiPutValue(i ? "kernel.percpu.cpu.irq.hard" : "kernel.all.cpu.irq.hard", str, buf);
+		if (i) {
+			/* kernel.percpu.cpu.intr — total interrupt ms per CPU; no all-CPU equivalent exists */
+			atom.ull = JIFFIES_TO_MSEC(scc->cpu_hardirq + scc->cpu_softirq);
+			handle = ACT_HANDLE(m, CPU_PERCPU_CPU_INTR, slot);
+			pmiPutAtomValueHandle(handle, &atom);
+		}
 
-		pmsprintf(buf, sizeof(buf), "%llu", scc->cpu_softirq);
-		pmiPutValue(i ? "kernel.percpu.cpu.irq.soft" : "kernel.all.cpu.irq.soft", str, buf);
+		atom.ull = JIFFIES_TO_MSEC(scc->cpu_hardirq);
+		handle = ACT_HANDLE(m, i ? CPU_PERCPU_IRQHARD : CPU_ALLCPU_IRQHARD, slot);
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", scc->cpu_guest);
-		pmiPutValue(i ? "kernel.percpu.cpu.guest" : "kernel.all.cpu.guest", str, buf);
+		atom.ull = JIFFIES_TO_MSEC(scc->cpu_softirq);
+		handle = ACT_HANDLE(m, i ? CPU_PERCPU_IRQSOFT : CPU_ALLCPU_IRQSOFT, slot);
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", scc->cpu_guest_nice);
-		pmiPutValue(i ? "kernel.percpu.cpu.guest_nice" : "kernel.all.cpu.guest_nice", str, buf);
+		atom.ull = JIFFIES_TO_MSEC(scc->cpu_guest);
+		handle = ACT_HANDLE(m, i ? CPU_PERCPU_GUEST : CPU_ALLCPU_GUEST, slot);
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", scc->cpu_idle);
-		pmiPutValue(i ? "kernel.percpu.cpu.idle" : "kernel.all.cpu.idle", str, buf);
+		atom.ull = JIFFIES_TO_MSEC(scc->cpu_guest_nice);
+		handle = ACT_HANDLE(m, i ? CPU_PERCPU_GUESTNICE : CPU_ALLCPU_GUESTNICE, slot);
+		pmiPutAtomValueHandle(handle, &atom);
+
+		atom.ull = JIFFIES_TO_MSEC(scc->cpu_idle);
+		handle = ACT_HANDLE(m, i ? CPU_PERCPU_IDLE : CPU_ALLCPU_IDLE, slot);
+		pmiPutAtomValueHandle(handle, &atom);
 
 		/*
-		 * kernel.percpu.interrupts: write total interrupt count per CPU.
-		 * The per-interrupt-line breakdown is written by pcp_print_irq_stats.
-		 * We must write a value here so that check_pcpfile_actlist() can
-		 * find the metric in the archive (it is part of cpu_metrics).
-		 * Use hardirq + softirq jiffies as a proxy.
+		 * kernel.percpu.interrupts is written by pcp_print_irq_stats with
+		 * the correct IRQ::cpuN instance naming; do not write it here.
 		 */
-		if (i) {
-			pmsprintf(buf, sizeof(buf), "%llu",
-				  scc->cpu_hardirq + scc->cpu_softirq);
-			pmiPutValue("kernel.percpu.interrupts", cpuno, buf);
-		}
 	}
 }
 
@@ -404,7 +441,7 @@ void pcp_read_cpu_stats(pmValueSet *values, struct activity *a, int curr)
 			scc->cpu_iowait = pcp_read_u64(values, j, cpu_metric_descs, CPU_PERCPU_WAITTOTAL);
 		}
 		break;
-	case PMID_CPU_PERCPU_IRQTOTAL:
+	case PMID_CPU_PERCPU_CPU_INTR:
 		/* Reconstructed from IRQHARD + IRQSOFT; skip */
 		break;
 	case PMID_CPU_PERCPU_IRQHARD:
@@ -456,9 +493,12 @@ void pcp_read_cpu_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_softnet_stats(struct activity *a, int curr)
 {
-	int i;
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
+	size_t slot;
+	int handle, i;
 	struct stats_softnet *ssnc;
-	char buf[64], cpuno[64];
+	char cpuno[64];
 	unsigned char offline_cpu_bitmap[BITMAP_SIZE(NR_CPUS)] = {0};
 
 	/*
@@ -490,23 +530,31 @@ __print_funct_t pcp_print_softnet_stats(struct activity *a, int curr)
 			sprintf(cpuno, "cpu%d", i - 1);
 		}
 
-		pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) ssnc->processed);
-		pmiPutValue("network.softnet.percpu.processed", cpuno, buf);
+		slot = pcp_find_slot(m, i - 1);
 
-		pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) ssnc->dropped);
-		pmiPutValue("network.softnet.percpu.dropped", cpuno, buf);
+		atom.ull = (unsigned long long)ssnc->processed;
+		handle = ACT_HANDLE(m, SOFTNET_PERCPU_PROCESSED, slot);
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) ssnc->time_squeeze);
-		pmiPutValue("network.softnet.percpu.time_squeeze", cpuno, buf);
+		atom.ull = (unsigned long long)ssnc->dropped;
+		handle = ACT_HANDLE(m, SOFTNET_PERCPU_DROPPED, slot);
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) ssnc->received_rps);
-		pmiPutValue("network.softnet.percpu.received_rps", cpuno, buf);
+		atom.ull = (unsigned long long)ssnc->time_squeeze;
+		handle = ACT_HANDLE(m, SOFTNET_PERCPU_TIMESQUEEZE, slot);
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) ssnc->flow_limit);
-		pmiPutValue("network.softnet.percpu.flow_limit", cpuno, buf);
+		atom.ull = (unsigned long long)ssnc->received_rps;
+		handle = ACT_HANDLE(m, SOFTNET_PERCPU_RECEIVEDRPS, slot);
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) ssnc->backlog_len);
-		pmiPutValue("network.softnet.percpu.backlog_length", cpuno, buf);
+		atom.ull = (unsigned long long)ssnc->flow_limit;
+		handle = ACT_HANDLE(m, SOFTNET_PERCPU_FLOWLIMIT, slot);
+		pmiPutAtomValueHandle(handle, &atom);
+
+		atom.ull = (unsigned long long)ssnc->backlog_len;
+		handle = ACT_HANDLE(m, SOFTNET_PERCPU_BACKLOGLENGTH, slot);
+		pmiPutAtomValueHandle(handle, &atom);
 	}
 }
 
@@ -600,15 +648,16 @@ void pcp_read_softnet_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_pcsw_stats(struct activity *a, int curr)
 {
-	char buf[64];
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
 	struct stats_pcsw
 		*spc = (struct stats_pcsw *) a->buf[curr];
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->context_switch);
-	pmiPutValue("kernel.all.pswitch", NULL, buf);
+	atom.ull = (unsigned long long)spc->context_switch;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PCSW_CONTEXT_SWITCH, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%lu", spc->processes);
-	pmiPutValue("kernel.all.sysfork", NULL, buf);
+	atom.ull = (unsigned long long)spc->processes;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PCSW_FORK_SYSCALLS, 0), &atom);
 }
 
 /*
@@ -654,8 +703,11 @@ void pcp_read_pcsw_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_irq_stats(struct activity *a, int curr)
 {
-	int i, c;
-	char buf[64], name[64];
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
+	size_t slot;
+	int i, c, handle;
+	char name[64];
 	struct stats_irq *stc_cpu_irq, *stc_cpuall_irq;
 	unsigned char masked_cpu_bitmap[BITMAP_SIZE(NR_CPUS)] = {0};
 
@@ -688,25 +740,34 @@ __print_funct_t pcp_print_irq_stats(struct activity *a, int curr)
 				/* No */
 				continue;
 
-			pmsprintf(buf, sizeof(buf), "%u", stc_cpu_irq->irq_nr);
+			atom.ull = stc_cpu_irq->irq_nr;
 
 			if (!c) {
 				/* This is CPU "all" */
 				if (!i) {
 					/* This is interrupt "sum" */
-					pmiPutValue("kernel.all.intr", NULL, buf);
+					handle = ACT_HANDLE(m, IRQ_ALLIRQ_TOTAL, 0);
+					pmiPutAtomValueHandle(handle, &atom);
 				}
 				else {
-					pmiPutValue("kernel.all.interrupts.total",
-						    stc_cpuall_irq->irq_name, buf);
+					slot = pcp_slot_for_item(a->item_list,
+								 stc_cpuall_irq->irq_name);
+					handle = ACT_HANDLE(m, IRQ_PERIRQ_TOTAL, slot);
+					pmiPutAtomValueHandle(handle, &atom);
 				}
 			}
 			else {
-				/* This is a particular CPU */
+				/* This is a particular CPU — dynamic "irq::cpuN" instance.
+				 * No pre-allocated handle exists for these instances, so
+				 * pmiPutValue is used here.
+				 */
+				char numstr[32];
+
 				pmsprintf(name, sizeof(name), "%s::cpu%d",
 					 stc_cpuall_irq->irq_name, c - 1);
-
-				pmiPutValue("kernel.percpu.interrupts", name, buf);
+				pmsprintf(numstr, sizeof(numstr), "%u",
+					  stc_cpu_irq->irq_nr);
+				pmiPutValue("kernel.percpu.interrupts", name, numstr);
 			}
 		}
 	}
@@ -754,15 +815,16 @@ void pcp_read_irq_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_swap_stats(struct activity *a, int curr)
 {
-	char buf[64];
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
 	struct stats_swap
 		*ssc = (struct stats_swap *) a->buf[curr];
 
-	pmsprintf(buf, sizeof(buf), "%lu", ssc->pswpin);
-	pmiPutValue("swap.pagesin", NULL, buf);
+	atom.ul = (unsigned long)ssc->pswpin;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, SWAP_PAGESIN, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%lu", ssc->pswpout);
-	pmiPutValue("swap.pagesout", NULL, buf);
+	atom.ull = (unsigned long long)ssc->pswpout;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, SWAP_PAGESOUT, 0), &atom);
 }
 
 /*
@@ -803,39 +865,40 @@ void pcp_read_swap_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_paging_stats(struct activity *a, int curr)
 {
-	char buf[64];
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
 	struct stats_paging
 		*spc = (struct stats_paging *) a->buf[curr];
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgpgin);
-	pmiPutValue("mem.vmstat.pgpgin", NULL, buf);
+	atom.ull = (unsigned long long)spc->pgpgin;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PAGING_PGPGIN, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgpgout);
-	pmiPutValue("mem.vmstat.pgpgout", NULL, buf);
+	atom.ull = (unsigned long long)spc->pgpgout;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PAGING_PGPGOUT, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgfault);
-	pmiPutValue("mem.vmstat.pgfault", NULL, buf);
+	atom.ull = (unsigned long long)spc->pgfault;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PAGING_PGFAULT, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgmajfault);
-	pmiPutValue("mem.vmstat.pgmajfault", NULL, buf);
+	atom.ull = (unsigned long long)spc->pgmajfault;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PAGING_PGMAJFAULT, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgfree);
-	pmiPutValue("mem.vmstat.pgfree", NULL, buf);
+	atom.ull = (unsigned long long)spc->pgfree;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PAGING_PGFREE, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgscan_kswapd);
-	pmiPutValue("mem.vmstat.pgscan_kswapd_total", NULL, buf);
+	atom.ull = (unsigned long long)spc->pgscan_kswapd;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PAGING_PGSCANKSWAPD, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgscan_direct);
-	pmiPutValue("mem.vmstat.pgscan_direct_total", NULL, buf);
+	atom.ull = (unsigned long long)spc->pgscan_direct;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PAGING_PGSCANDIRECT, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgsteal);
-	pmiPutValue("mem.vmstat.pgsteal_total", NULL, buf);
+	atom.ull = (unsigned long long)spc->pgsteal;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PAGING_PGSTEAL, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgpromote);
-	pmiPutValue("mem.vmstat.pgpromote_success", NULL, buf);
+	atom.ull = (unsigned long long)spc->pgpromote;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PAGING_PGPROMOTE, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgdemote);
-	pmiPutValue("mem.vmstat.pgdemote_total", NULL, buf);
+	atom.ull = (unsigned long long)spc->pgdemote;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PAGING_PGDEMOTE, 0), &atom);
 }
 
 /*
@@ -926,30 +989,31 @@ void pcp_read_paging_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_io_stats(struct activity *a, int curr)
 {
-	char buf[64];
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
 	struct stats_io
 		*sic = (struct stats_io *) a->buf[curr];
 
-	pmsprintf(buf, sizeof(buf), "%llu", sic->dk_drive);
-	pmiPutValue("disk.all.total", NULL, buf);
+	atom.ull = (unsigned long long)sic->dk_drive;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, IO_ALLDEV_TOTAL, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", sic->dk_drive_rio);
-	pmiPutValue("disk.all.read", NULL, buf);
+	atom.ull = (unsigned long long)sic->dk_drive_rio;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, IO_ALLDEV_READ, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu",sic->dk_drive_wio);
-	pmiPutValue("disk.all.write", NULL, buf);
+	atom.ull = (unsigned long long)sic->dk_drive_wio;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, IO_ALLDEV_WRITE, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", sic->dk_drive_dio);
-	pmiPutValue("disk.all.discard", NULL, buf);
+	atom.ull = (unsigned long long)sic->dk_drive_dio;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, IO_ALLDEV_DISCARD, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", sic->dk_drive_rblk);
-	pmiPutValue("disk.all.read_bytes", NULL, buf);
+	atom.ull = (unsigned long long)sic->dk_drive_rblk;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, IO_ALLDEV_READBYTES, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", sic->dk_drive_wblk);
-	pmiPutValue("disk.all.write_bytes", NULL, buf);
+	atom.ull = (unsigned long long)sic->dk_drive_wblk;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, IO_ALLDEV_WRITEBYTES, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", sic->dk_drive_dblk);
-	pmiPutValue("disk.all.discard_bytes", NULL, buf);
+	atom.ull = (unsigned long long)sic->dk_drive_dblk;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, IO_ALLDEV_DISCARDBYTES, 0), &atom);
 }
 
 /*
@@ -964,59 +1028,60 @@ __print_funct_t pcp_print_io_stats(struct activity *a, int curr)
 void pcp_print_ram_memory_stats(struct stats_memory *smc, int dispall)
 {
 #ifdef HAVE_PCP
-	char buf[64];
+	struct act_metrics *m = &mem_metrics;
+	pmAtomValue atom;
 
-	pmsprintf(buf, sizeof(buf), "%lu", (unsigned long) (smc->tlmkb >> 10));
-	pmiPutValue("hinv.physmem", NULL, buf);
+	atom.ul = (unsigned long)(smc->tlmkb >> 10);
+	pmiPutAtomValueHandle(ACT_HANDLE(m, MEM_PHYS_MB, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", smc->tlmkb);
-	pmiPutValue("mem.physmem", NULL, buf);
+	atom.ull = (unsigned long long)smc->tlmkb;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, MEM_PHYS_KB, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", smc->frmkb);
-	pmiPutValue("mem.util.free", NULL, buf);
+	atom.ull = (unsigned long long)smc->frmkb;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, MEM_UTIL_FREE, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", smc->availablekb);
-	pmiPutValue("mem.util.available", NULL, buf);
+	atom.ull = (unsigned long long)smc->availablekb;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, MEM_UTIL_AVAIL, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", smc->tlmkb - smc->availablekb);
-	pmiPutValue("mem.util.used", NULL, buf);
+	atom.ull = (unsigned long long)smc->tlmkb - smc->availablekb;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, MEM_UTIL_USED, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", smc->bufkb);
-	pmiPutValue("mem.util.bufmem", NULL, buf);
+	atom.ull = (unsigned long long)smc->bufkb;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, MEM_UTIL_BUFFER, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", smc->camkb);
-	pmiPutValue("mem.util.cached", NULL, buf);
+	atom.ull = (unsigned long long)smc->camkb;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, MEM_UTIL_CACHED, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", smc->comkb);
-	pmiPutValue("mem.util.committed_AS", NULL, buf);
+	atom.ull = (unsigned long long)smc->comkb;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, MEM_UTIL_COMMITAS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", smc->activekb);
-	pmiPutValue("mem.util.active", NULL, buf);
+	atom.ull = (unsigned long long)smc->activekb;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, MEM_UTIL_ACTIVE, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", smc->inactkb);
-	pmiPutValue("mem.util.inactive", NULL, buf);
+	atom.ull = (unsigned long long)smc->inactkb;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, MEM_UTIL_INACTIVE, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", smc->dirtykb);
-	pmiPutValue("mem.util.dirty", NULL, buf);
+	atom.ull = (unsigned long long)smc->dirtykb;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, MEM_UTIL_DIRTY, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", smc->shmemkb);
-	pmiPutValue("mem.util.shared", NULL, buf);
+	atom.ull = (unsigned long long)smc->shmemkb;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, MEM_UTIL_SHARED, 0), &atom);
 
 	if (dispall) {
-		pmsprintf(buf, sizeof(buf), "%llu", smc->anonpgkb);
-		pmiPutValue("mem.util.anonpages", NULL, buf);
+		atom.ull = (unsigned long long)smc->anonpgkb;
+		pmiPutAtomValueHandle(ACT_HANDLE(m, MEM_UTIL_ANON, 0), &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", smc->slabkb);
-		pmiPutValue("mem.util.slab", NULL, buf);
+		atom.ull = (unsigned long long)smc->slabkb;
+		pmiPutAtomValueHandle(ACT_HANDLE(m, MEM_UTIL_SLAB, 0), &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", smc->kstackkb);
-		pmiPutValue("mem.util.kernelStack", NULL, buf);
+		atom.ull = (unsigned long long)smc->kstackkb;
+		pmiPutAtomValueHandle(ACT_HANDLE(m, MEM_UTIL_KSTACK, 0), &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", smc->pgtblkb);
-		pmiPutValue("mem.util.pageTables", NULL, buf);
+		atom.ull = (unsigned long long)smc->pgtblkb;
+		pmiPutAtomValueHandle(ACT_HANDLE(m, MEM_UTIL_PGTABLE, 0), &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", smc->vmusedkb);
-		pmiPutValue("mem.util.vmallocUsed", NULL, buf);
+		atom.ull = (unsigned long long)smc->vmusedkb;
+		pmiPutAtomValueHandle(ACT_HANDLE(m, MEM_UTIL_VMALLOC, 0), &atom);
 	}
 #endif	/* HAVE_PCP */
 }
@@ -1032,16 +1097,17 @@ void pcp_print_ram_memory_stats(struct stats_memory *smc, int dispall)
 void pcp_print_swap_memory_stats(struct stats_memory *smc)
 {
 #ifdef HAVE_PCP
-	char buf[64];
+	struct act_metrics *m = &mem_metrics;
+	pmAtomValue atom;
 
-	pmsprintf(buf, sizeof(buf), "%llu", smc->frskb);
-	pmiPutValue("mem.util.swapFree", NULL, buf);
+	atom.ull = (unsigned long long)smc->frskb;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, MEM_UTIL_SWAPFREE, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", smc->tlskb);
-	pmiPutValue("mem.util.swapTotal", NULL, buf);
+	atom.ull = (unsigned long long)smc->tlskb;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, MEM_UTIL_SWAPTOTAL, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", smc->caskb);
-	pmiPutValue("mem.util.swapCached", NULL, buf);
+	atom.ull = (unsigned long long)smc->caskb;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, MEM_UTIL_SWAPCACHED, 0), &atom);
 #endif	/* HAVE_PCP */
 }
 
@@ -1146,6 +1212,11 @@ void pcp_read_memory_stats(pmValueSet *values, struct activity *a, int curr)
 						MEM_UTIL_FREE);
 		break;
 
+	case PMID_MEM_UTIL_SHARED:
+		smc->shmemkb = pcp_read_u64(values, 0, mem_metric_descs,
+						MEM_UTIL_SHARED);
+		break;
+
 	case PMID_MEM_UTIL_AVAIL:
 		smc->availablekb = pcp_read_u64(values, 0, mem_metric_descs,
 						MEM_UTIL_AVAIL);
@@ -1234,21 +1305,22 @@ void pcp_read_memory_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_ktables_stats(struct activity *a, int curr)
 {
-	char buf[64];
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
 	struct stats_ktables
 		*skc = (struct stats_ktables *) a->buf[curr];
 
-	pmsprintf(buf, sizeof(buf), "%lu", (unsigned long) skc->dentry_stat);
-	pmiPutValue("vfs.dentry.count", NULL, buf);
+	atom.ul = (unsigned long)skc->dentry_stat;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, KTABLE_DENTRYS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%lu", (unsigned long) skc->file_used);
-	pmiPutValue("vfs.files.count", NULL, buf);
+	atom.ul = (unsigned long)skc->file_used;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, KTABLE_FILES, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%lu", (unsigned long) skc->inode_used);
-	pmiPutValue("vfs.inodes.count", NULL, buf);
+	atom.ul = (unsigned long)skc->inode_used;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, KTABLE_INODES, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", skc->pty_nr);
-	pmiPutValue("kernel.all.nptys", NULL, buf);
+	atom.ul = (unsigned long)skc->pty_nr;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, KTABLE_PTYS, 0), &atom);
 }
 
 /*
@@ -1300,27 +1372,28 @@ void pcp_read_ktable_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_queue_stats(struct activity *a, int curr)
 {
-	char buf[64];
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
 	struct stats_queue
 		*sqc = (struct stats_queue *) a->buf[curr];
 
-	pmsprintf(buf, sizeof(buf), "%lu", (unsigned long) sqc->nr_running);
-	pmiPutValue("kernel.all.runnable", NULL, buf);
+	atom.ul = (unsigned long)sqc->nr_running;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, KQUEUE_RUNNABLE, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%lu", (unsigned long) sqc->nr_threads);
-	pmiPutValue("kernel.all.nprocs", NULL, buf);
+	atom.ul = (unsigned long)sqc->nr_threads;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, KQUEUE_PROCESSES, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%lu", (unsigned long) sqc->procs_blocked);
-	pmiPutValue("kernel.all.blocked", NULL, buf);
+	atom.ull = (unsigned long long)(unsigned long) sqc->procs_blocked;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, KQUEUE_BLOCKED, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%f", (double) sqc->load_avg_1 / 100.0);
-	pmiPutValue("kernel.all.load", "1 minute", buf);
+	atom.f = (float)sqc->load_avg_1 / 100.0;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, KQUEUE_LOADAVG, pcp_find_slot(m, 1)), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%f", (double) sqc->load_avg_5 / 100.0);
-	pmiPutValue("kernel.all.load", "5 minute", buf);
+	atom.f = (float)sqc->load_avg_5 / 100.0;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, KQUEUE_LOADAVG, pcp_find_slot(m, 5)), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%f", (double) sqc->load_avg_15 / 100.0);
-	pmiPutValue("kernel.all.load", "15 minute", buf);
+	atom.f = (float)sqc->load_avg_15 / 100.0;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, KQUEUE_LOADAVG, pcp_find_slot(m, 15)), &atom);
 }
 
 /*
@@ -1398,10 +1471,12 @@ void pcp_read_kqueue_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_disk_stats(struct activity *a, int curr)
 {
-	int i;
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
+	size_t slot;
+	int i, handle;
 	struct stats_disk *sdc;
 	char *dev_name;
-	char buf[64];
 
 	for (i = 0; i < a->nr[curr]; i++) {
 
@@ -1418,39 +1493,51 @@ __print_funct_t pcp_print_disk_stats(struct activity *a, int curr)
 				/* Device not found */
 				continue;
 		}
+		slot = pcp_slot_for_item(a->item_list, dev_name);
 
-		pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sdc->nr_ios);
-		pmiPutValue("disk.dev.total", dev_name, buf);
+		handle = ACT_HANDLE(m, DISK_PERDEV_TOTAL, slot);
+		atom.ull = (unsigned long long) sdc->nr_ios;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) (sdc->rd_sect + sdc->wr_sect) / 2);
-		pmiPutValue("disk.dev.total_bytes", dev_name, buf);
+		handle = ACT_HANDLE(m, DISK_PERDEV_TOTALBYTES, slot);
+		atom.ull = (unsigned long long) (sdc->rd_sect + sdc->wr_sect) / 2;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sdc->rd_sect / 2);
-		pmiPutValue("disk.dev.read_bytes", dev_name, buf);
+		handle = ACT_HANDLE(m, DISK_PERDEV_READBYTES, slot);
+		atom.ull = (unsigned long long) sdc->rd_sect / 2;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sdc->wr_sect / 2);
-		pmiPutValue("disk.dev.write_bytes", dev_name, buf);
+		handle = ACT_HANDLE(m, DISK_PERDEV_WRITEBYTES, slot);
+		atom.ull = (unsigned long long) sdc->wr_sect / 2;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sdc->dc_sect / 2);
-		pmiPutValue("disk.dev.discard_bytes", dev_name, buf);
+		handle = ACT_HANDLE(m, DISK_PERDEV_DISCARDBYTES, slot);
+		atom.ull = (unsigned long long) sdc->dc_sect / 2;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%lu", (unsigned long) sdc->rd_ticks + sdc->wr_ticks);
-		pmiPutValue("disk.dev.total_rawactive", dev_name, buf);
+		handle = ACT_HANDLE(m, DISK_PERDEV_TOTALACTIVE, slot);
+		atom.ul = (unsigned long) sdc->rd_ticks + sdc->wr_ticks;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%lu", (unsigned long) sdc->rd_ticks);
-		pmiPutValue("disk.dev.read_rawactive", dev_name, buf);
+		handle = ACT_HANDLE(m, DISK_PERDEV_READACTIVE, slot);
+		atom.ul = (unsigned long) sdc->rd_ticks;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%lu", (unsigned long) sdc->wr_ticks);
-		pmiPutValue("disk.dev.write_rawactive", dev_name, buf);
+		handle = ACT_HANDLE(m, DISK_PERDEV_WRITEACTIVE, slot);
+		atom.ul = (unsigned long) sdc->wr_ticks;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%lu", (unsigned long)sdc->dc_ticks);
-		pmiPutValue("disk.dev.discard_rawactive", dev_name, buf);
+		handle = ACT_HANDLE(m, DISK_PERDEV_DISCARDACTIVE, slot);
+		atom.ul = (unsigned long)sdc->dc_ticks;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%lu", (unsigned long)sdc->tot_ticks);
-		pmiPutValue("disk.dev.avactive", dev_name, buf);
+		handle = ACT_HANDLE(m, DISK_PERDEV_AVACTIVE, slot);
+		atom.ul = (unsigned long)sdc->tot_ticks;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%lu", (unsigned long)sdc->rq_ticks);
-		pmiPutValue("disk.dev.aveq", dev_name, buf);
+		handle = ACT_HANDLE(m, DISK_PERDEV_AVQUEUE, slot);
+		atom.ul = (unsigned long)sdc->rq_ticks;
+		pmiPutAtomValueHandle(handle, &atom);
 	}
 }
 
@@ -1587,9 +1674,11 @@ void pcp_read_disk_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_dev_stats(struct activity *a, int curr)
 {
-	int i;
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
+	size_t slot;
+	int i, handle;
 	struct stats_net_dev *sndc;
-	char buf[64];
 
 	for (i = 0; i < a->nr[curr]; i++) {
 
@@ -1601,6 +1690,7 @@ __print_funct_t pcp_print_net_dev_stats(struct activity *a, int curr)
 				/* Device not found */
 				continue;
 		}
+		slot = pcp_slot_for_item(a->item_list, sndc->interface);
 
 		/*
 		 * No need to look for the previous sample values: PCP displays the raw
@@ -1611,26 +1701,33 @@ __print_funct_t pcp_print_net_dev_stats(struct activity *a, int curr)
 		 * for current interface.
 		 */
 
-		pmsprintf(buf, sizeof(buf), "%llu", sndc->rx_packets);
-		pmiPutValue("network.interface.in.packets", sndc->interface, buf);
+		handle = ACT_HANDLE(m, NET_PERINTF_INPACKETS, slot);
+		atom.ull = (unsigned long long)sndc->rx_packets;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", sndc->tx_packets);
-		pmiPutValue("network.interface.out.packets", sndc->interface, buf);
+		handle = ACT_HANDLE(m, NET_PERINTF_OUTPACKETS, slot);
+		atom.ull = (unsigned long long)sndc->tx_packets;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", sndc->rx_bytes);
-		pmiPutValue("network.interface.in.bytes", sndc->interface, buf);
+		handle = ACT_HANDLE(m, NET_PERINTF_INBYTES, slot);
+		atom.ull = (unsigned long long)sndc->rx_bytes;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", sndc->tx_bytes);
-		pmiPutValue("network.interface.out.bytes", sndc->interface, buf);
+		handle = ACT_HANDLE(m, NET_PERINTF_OUTBYTES, slot);
+		atom.ull = (unsigned long long)sndc->tx_bytes;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", sndc->rx_compressed);
-		pmiPutValue("network.interface.in.compressed", sndc->interface, buf);
+		handle = ACT_HANDLE(m, NET_PERINTF_INCOMPRESS, slot);
+		atom.ull = (unsigned long long)sndc->rx_compressed;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", sndc->tx_compressed);
-		pmiPutValue("network.interface.out.compressed", sndc->interface, buf);
+		handle = ACT_HANDLE(m, NET_PERINTF_OUTCOMPRESS, slot);
+		atom.ull = (unsigned long long)sndc->tx_compressed;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", sndc->multicast);
-		pmiPutValue("network.interface.in.mcasts", sndc->interface, buf);
+		handle = ACT_HANDLE(m, NET_PERINTF_INMULTICAST, slot);
+		atom.ull = (unsigned long long)sndc->multicast;
+		pmiPutAtomValueHandle(handle, &atom);
 	}
 }
 
@@ -1707,9 +1804,11 @@ void pcp_read_netdev_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_edev_stats(struct activity *a, int curr)
 {
-	int i;
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
+	size_t slot;
+	int i, handle;
 	struct stats_net_edev *snedc;
-	char buf[64];
 
 	for (i = 0; i < a->nr[curr]; i++) {
 
@@ -1721,33 +1820,43 @@ __print_funct_t pcp_print_net_edev_stats(struct activity *a, int curr)
 				/* Device not found */
 				continue;
 		}
+		slot = pcp_slot_for_item(a->item_list, snedc->interface);
 
-		pmsprintf(buf, sizeof(buf), "%llu", snedc->rx_errors);
-		pmiPutValue("network.interface.in.errors", snedc->interface, buf);
+		handle = ACT_HANDLE(m, NET_EPERINTF_INERRORS, slot);
+		atom.ull = (unsigned long long)snedc->rx_errors;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", snedc->tx_errors);
-		pmiPutValue("network.interface.out.errors", snedc->interface, buf);
+		handle = ACT_HANDLE(m, NET_EPERINTF_OUTERRORS, slot);
+		atom.ull = (unsigned long long)snedc->tx_errors;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", snedc->collisions);
-		pmiPutValue("network.interface.collisions", snedc->interface, buf);
+		handle = ACT_HANDLE(m, NET_EPERINTF_COLLISIONS, slot);
+		atom.ull = (unsigned long long)snedc->collisions;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", snedc->rx_dropped);
-		pmiPutValue("network.interface.in.drops", snedc->interface, buf);
+		handle = ACT_HANDLE(m, NET_EPERINTF_INDROPS, slot);
+		atom.ull = (unsigned long long)snedc->rx_dropped;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", snedc->tx_dropped);
-		pmiPutValue("network.interface.out.drops", snedc->interface, buf);
+		handle = ACT_HANDLE(m, NET_EPERINTF_OUTDROPS, slot);
+		atom.ull = (unsigned long long)snedc->tx_dropped;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", snedc->tx_carrier_errors);
-		pmiPutValue("network.interface.out.carrier", snedc->interface, buf);
+		handle = ACT_HANDLE(m, NET_EPERINTF_OUTCARRIER, slot);
+		atom.ull = (unsigned long long)snedc->tx_carrier_errors;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", snedc->rx_frame_errors);
-		pmiPutValue("network.interface.in.frame", snedc->interface, buf);
+		handle = ACT_HANDLE(m, NET_EPERINTF_INFRAME, slot);
+		atom.ull = (unsigned long long)snedc->rx_frame_errors;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", snedc->rx_fifo_errors);
-		pmiPutValue("network.interface.in.fifo", snedc->interface, buf);
+		handle = ACT_HANDLE(m, NET_EPERINTF_INFIFO, slot);
+		atom.ull = (unsigned long long)snedc->rx_fifo_errors;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", snedc->tx_fifo_errors);
-		pmiPutValue("network.interface.out.fifo", snedc->interface, buf);
+		handle = ACT_HANDLE(m, NET_EPERINTF_OUTFIFO, slot);
+		atom.ull = (unsigned long long)snedc->tx_fifo_errors;
+		pmiPutAtomValueHandle(handle, &atom);
 	}
 }
 
@@ -1831,8 +1940,11 @@ void pcp_read_enetdev_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_serial_stats(struct activity *a, int curr)
 {
-	int i;
-	char buf[64], serialno[64];
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
+	size_t slot;
+	int i, handle;
+	char serialno[64];
 	struct stats_serial *ssc;
 
 	for (i = 0; i < a->nr[curr]; i++) {
@@ -1840,24 +1952,31 @@ __print_funct_t pcp_print_serial_stats(struct activity *a, int curr)
 		ssc = (struct stats_serial *) ((char *) a->buf[curr] + i * a->msize);
 
 		pmsprintf(serialno, sizeof(serialno), "serial%u", ssc->line);
+		slot = pcp_slot_for_item(a->item_list, serialno);
 
-		pmsprintf(buf, sizeof(buf), "%u", ssc->rx);
-		pmiPutValue("tty.serial.rx", serialno, buf);
+		handle = ACT_HANDLE(m, SERIAL_PERTTY_RX, slot);
+		atom.ul = (unsigned long)ssc->rx;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%u", ssc->tx);
-		pmiPutValue("tty.serial.tx", serialno, buf);
+		handle = ACT_HANDLE(m, SERIAL_PERTTY_TX, slot);
+		atom.ul = (unsigned long)ssc->tx;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%u", ssc->frame);
-		pmiPutValue("tty.serial.frame", serialno, buf);
+		handle = ACT_HANDLE(m, SERIAL_PERTTY_FRAME, slot);
+		atom.ul = (unsigned long)ssc->frame;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%u", ssc->parity);
-		pmiPutValue("tty.serial.parity", serialno, buf);
+		handle = ACT_HANDLE(m, SERIAL_PERTTY_PARITY, slot);
+		atom.ul = (unsigned long)ssc->parity;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%u", ssc->brk);
-		pmiPutValue("tty.serial.brk", serialno, buf);
+		handle = ACT_HANDLE(m, SERIAL_PERTTY_BRK, slot);
+		atom.ul = (unsigned long)ssc->brk;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%u", ssc->overrun);
-		pmiPutValue("tty.serial.overrun", serialno, buf);
+		handle = ACT_HANDLE(m, SERIAL_PERTTY_OVERRUN, slot);
+		atom.ul = (unsigned long)ssc->overrun;
+		pmiPutAtomValueHandle(handle, &atom);
 	}
 }
 
@@ -1929,27 +2048,28 @@ void pcp_read_serial_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_nfs_stats(struct activity *a, int curr)
 {
-	char buf[64];
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
 	struct stats_net_nfs
 		*snnc = (struct stats_net_nfs *) a->buf[curr];
 
-	pmsprintf(buf, sizeof(buf), "%u", snnc->nfs_rpccnt);
-	pmiPutValue("rpc.client.rpccnt", NULL, buf);
+	atom.ul = (unsigned long)snnc->nfs_rpccnt;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NFSCLIENT_RPCCCNT, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%u", snnc->nfs_rpcretrans);
-	pmiPutValue("rpc.client.rpcretrans", NULL, buf);
+	atom.ul = (unsigned long)snnc->nfs_rpcretrans;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NFSCLIENT_RPCRETRANS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%u", snnc->nfs_readcnt);
-	pmiPutValue("nfs.client.reqs", "read", buf);
+	atom.ul = (unsigned long)snnc->nfs_readcnt;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NFSCLIENT_REQUESTS, pcp_slot_for_item(a->item_list, "read")), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%u", snnc->nfs_writecnt);
-	pmiPutValue("nfs.client.reqs", "write", buf);
+	atom.ul = (unsigned long)snnc->nfs_writecnt;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NFSCLIENT_REQUESTS, pcp_slot_for_item(a->item_list, "write")), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%u", snnc->nfs_accesscnt);
-	pmiPutValue("nfs.client.reqs", "access", buf);
+	atom.ul = (unsigned long)snnc->nfs_accesscnt;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NFSCLIENT_REQUESTS, pcp_slot_for_item(a->item_list, "access")), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%u", snnc->nfs_getattcnt);
-	pmiPutValue("nfs.client.reqs", "getattr", buf);
+	atom.ul = (unsigned long)snnc->nfs_getattcnt;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NFSCLIENT_REQUESTS, pcp_slot_for_item(a->item_list, "getattr")), &atom);
 }
 
 /*
@@ -2026,42 +2146,43 @@ void pcp_read_net_nfs_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_nfsd_stats(struct activity *a, int curr)
 {
-	char buf[64];
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
 	struct stats_net_nfsd
 		*snndc = (struct stats_net_nfsd *) a->buf[curr];
 
-	pmsprintf(buf, sizeof(buf), "%u", snndc->nfsd_rpccnt);
-	pmiPutValue("rpc.server.rpccnt", NULL, buf);
+	atom.ull = (unsigned long long)snndc->nfsd_rpccnt;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NFSSERVER_RPCCNT, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%u", snndc->nfsd_rpcbad);
-	pmiPutValue("rpc.server.rpcbadclnt", NULL, buf);
+	atom.ull = (unsigned long long)snndc->nfsd_rpcbad;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NFSSERVER_RPCBADCLNT, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%u", snndc->nfsd_netcnt);
-	pmiPutValue("rpc.server.netcnt", NULL, buf);
+	atom.ull = (unsigned long long)snndc->nfsd_netcnt;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NFSSERVER_NETCNT, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%u", snndc->nfsd_netudpcnt);
-	pmiPutValue("rpc.server.netudpcnt", NULL, buf);
+	atom.ull = (unsigned long long)snndc->nfsd_netudpcnt;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NFSSERVER_NETUDPCNT, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%u", snndc->nfsd_nettcpcnt);
-	pmiPutValue("rpc.server.nettcpcnt", NULL, buf);
+	atom.ull = (unsigned long long)snndc->nfsd_nettcpcnt;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NFSSERVER_NETTCPCNT, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%u", snndc->nfsd_rchits);
-	pmiPutValue("rpc.server.rchits", NULL, buf);
+	atom.ull = (unsigned long long)snndc->nfsd_rchits;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NFSSERVER_RCHITS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%u", snndc->nfsd_rcmisses);
-	pmiPutValue("rpc.server.rcmisses", NULL, buf);
+	atom.ull = (unsigned long long)snndc->nfsd_rcmisses;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NFSSERVER_RCMISSES, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%u", snndc->nfsd_readcnt);
-	pmiPutValue("nfs.server.reqs", "read", buf);
+	atom.ull = (unsigned long long)snndc->nfsd_readcnt;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NFSSERVER_REQUESTS, pcp_slot_for_item(a->item_list, "read")), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%u", snndc->nfsd_writecnt);
-	pmiPutValue("nfs.server.reqs", "write", buf);
+	atom.ull = (unsigned long long)snndc->nfsd_writecnt;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NFSSERVER_REQUESTS, pcp_slot_for_item(a->item_list, "write")), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%u", snndc->nfsd_accesscnt);
-	pmiPutValue("nfs.server.reqs", "access", buf);
+	atom.ull = (unsigned long long)snndc->nfsd_accesscnt;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NFSSERVER_REQUESTS, pcp_slot_for_item(a->item_list, "access")), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%u", snndc->nfsd_getattcnt);
-	pmiPutValue("nfs.server.reqs", "getattr", buf);
+	atom.ull = (unsigned long long)snndc->nfsd_getattcnt;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NFSSERVER_REQUESTS, pcp_slot_for_item(a->item_list, "getattr")), &atom);
 }
 
 /*
@@ -2168,27 +2289,28 @@ void pcp_read_net_nfsd_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_sock_stats(struct activity *a, int curr)
 {
-	char buf[64];
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
 	struct stats_net_sock
 		*snsc = (struct stats_net_sock *) a->buf[curr];
 
-	pmsprintf(buf, sizeof(buf), "%u", snsc->sock_inuse);
-	pmiPutValue("network.sockstat.total", NULL, buf);
+	atom.ul = (unsigned long)snsc->sock_inuse;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, SOCKET_TOTAL, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%u", snsc->tcp_inuse);
-	pmiPutValue("network.sockstat.tcp.inuse", NULL, buf);
+	atom.ul = (unsigned long)snsc->tcp_inuse;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, SOCKET_TCPINUSE, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%u", snsc->udp_inuse);
-	pmiPutValue("network.sockstat.udp.inuse", NULL, buf);
+	atom.ul = (unsigned long)snsc->udp_inuse;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, SOCKET_UDPINUSE, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%u", snsc->raw_inuse);
-	pmiPutValue("network.sockstat.raw.inuse", NULL, buf);
+	atom.ul = (unsigned long)snsc->raw_inuse;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, SOCKET_RAWINUSE, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%u", snsc->frag_inuse);
-	pmiPutValue("network.sockstat.frag.inuse", NULL, buf);
+	atom.ul = (unsigned long)snsc->frag_inuse;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, SOCKET_FRAGINUSE, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%u", snsc->tcp_tw);
-	pmiPutValue("network.sockstat.tcp.tw", NULL, buf);
+	atom.ul = (unsigned long)snsc->tcp_tw;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, SOCKET_TCPTW, 0), &atom);
 }
 
 /*
@@ -2251,33 +2373,34 @@ void pcp_read_net_sock_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_ip_stats(struct activity *a, int curr)
 {
-	char buf[64];
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
 	struct stats_net_ip
 		*snic = (struct stats_net_ip *) a->buf[curr];
 
-	pmsprintf(buf, sizeof(buf), "%llu", snic->InReceives);
-	pmiPutValue("network.ip.inreceives", NULL, buf);
+	atom.ull = (unsigned long long)snic->InReceives;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_IP_INRECEIVES, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", snic->ForwDatagrams);
-	pmiPutValue("network.ip.forwdatagrams", NULL, buf);
+	atom.ull = (unsigned long long)snic->ForwDatagrams;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_IP_FORWDATAGRAMS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", snic->InDelivers);
-	pmiPutValue("network.ip.indelivers", NULL, buf);
+	atom.ull = (unsigned long long)snic->InDelivers;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_IP_INDELIVERS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", snic->OutRequests);
-	pmiPutValue("network.ip.outrequests", NULL, buf);
+	atom.ull = (unsigned long long)snic->OutRequests;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_IP_OUTREQUESTS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", snic->ReasmReqds);
-	pmiPutValue("network.ip.reasmreqds", NULL, buf);
+	atom.ull = (unsigned long long)snic->ReasmReqds;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_IP_REASMREQDS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", snic->ReasmOKs);
-	pmiPutValue("network.ip.reasmoks", NULL, buf);
+	atom.ull = (unsigned long long)snic->ReasmOKs;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_IP_REASMOKS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", snic->FragOKs);
-	pmiPutValue("network.ip.fragoks", NULL, buf);
+	atom.ull = (unsigned long long)snic->FragOKs;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_IP_FRAGOKS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", snic->FragCreates);
-	pmiPutValue("network.ip.fragcreates", NULL, buf);
+	atom.ull = (unsigned long long)snic->FragCreates;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_IP_FRAGCREATES, 0), &atom);
 }
 
 /*
@@ -2357,33 +2480,34 @@ void pcp_read_net_ip_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_eip_stats(struct activity *a, int curr)
 {
-	char buf[64];
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
 	struct stats_net_eip
 		*sneic = (struct stats_net_eip *) a->buf[curr];
 
-	pmsprintf(buf, sizeof(buf), "%llu", sneic->InHdrErrors);
-	pmiPutValue("network.ip.inhdrerrors", NULL, buf);
+	atom.ull = (unsigned long long)sneic->InHdrErrors;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EIP_INHDRERRORS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", sneic->InAddrErrors);
-	pmiPutValue("network.ip.inaddrerrors", NULL, buf);
+	atom.ull = (unsigned long long)sneic->InAddrErrors;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EIP_INADDRERRORS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", sneic->InUnknownProtos);
-	pmiPutValue("network.ip.inunknownprotos", NULL, buf);
+	atom.ull = (unsigned long long)sneic->InUnknownProtos;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EIP_INUNKNOWNPROTOS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", sneic->InDiscards);
-	pmiPutValue("network.ip.indiscards", NULL, buf);
+	atom.ull = (unsigned long long)sneic->InDiscards;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EIP_INDISCARDS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", sneic->OutDiscards);
-	pmiPutValue("network.ip.outdiscards", NULL, buf);
+	atom.ull = (unsigned long long)sneic->OutDiscards;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EIP_OUTDISCARDS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", sneic->OutNoRoutes);
-	pmiPutValue("network.ip.outnoroutes", NULL, buf);
+	atom.ull = (unsigned long long)sneic->OutNoRoutes;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EIP_OUTNOROUTES, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", sneic->ReasmFails);
-	pmiPutValue("network.ip.reasmfails", NULL, buf);
+	atom.ull = (unsigned long long)sneic->ReasmFails;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EIP_REASMFAILS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", sneic->FragFails);
-	pmiPutValue("network.ip.fragfails", NULL, buf);
+	atom.ull = (unsigned long long)sneic->FragFails;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EIP_FRAGFAILS, 0), &atom);
 }
 
 /*
@@ -2464,51 +2588,52 @@ void pcp_read_net_eip_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_icmp_stats(struct activity *a, int curr)
 {
-	char buf[64];
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
 	struct stats_net_icmp
 		*snic = (struct stats_net_icmp *) a->buf[curr];
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InMsgs);
-	pmiPutValue("network.icmp.inmsgs", NULL, buf);
+	atom.ull = (unsigned long long)snic->InMsgs;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP_INMSGS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutMsgs);
-	pmiPutValue("network.icmp.outmsgs", NULL, buf);
+	atom.ull = (unsigned long long)snic->OutMsgs;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP_OUTMSGS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InEchos);
-	pmiPutValue("network.icmp.inechos", NULL, buf);
+	atom.ull = (unsigned long long)snic->InEchos;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP_INECHOS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InEchoReps);
-	pmiPutValue("network.icmp.inechoreps", NULL, buf);
+	atom.ull = (unsigned long long)snic->InEchoReps;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP_INECHOREPS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutEchos);
-	pmiPutValue("network.icmp.outechos", NULL, buf);
+	atom.ull = (unsigned long long)snic->OutEchos;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP_OUTECHOS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutEchoReps);
-	pmiPutValue("network.icmp.outechoreps", NULL, buf);
+	atom.ull = (unsigned long long)snic->OutEchoReps;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP_OUTECHOREPS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InTimestamps);
-	pmiPutValue("network.icmp.intimestamps", NULL, buf);
+	atom.ull = (unsigned long long)snic->InTimestamps;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP_INTIMESTAMPS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InTimestampReps);
-	pmiPutValue("network.icmp.intimestampreps", NULL, buf);
+	atom.ull = (unsigned long long)snic->InTimestampReps;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP_INTIMESTAMPREPS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutTimestamps);
-	pmiPutValue("network.icmp.outtimestamps", NULL, buf);
+	atom.ull = (unsigned long long)snic->OutTimestamps;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP_OUTTIMESTAMPS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutTimestampReps);
-	pmiPutValue("network.icmp.outtimestampreps", NULL, buf);
+	atom.ull = (unsigned long long)snic->OutTimestampReps;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP_OUTTIMESTAMPREPS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InAddrMasks);
-	pmiPutValue("network.icmp.inaddrmasks", NULL, buf);
+	atom.ull = (unsigned long long)snic->InAddrMasks;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP_INADDRMASKS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InAddrMaskReps);
-	pmiPutValue("network.icmp.inaddrmaskreps", NULL, buf);
+	atom.ull = (unsigned long long)snic->InAddrMaskReps;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP_INADDRMASKREPS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutAddrMasks);
-	pmiPutValue("network.icmp.outaddrmasks", NULL, buf);
+	atom.ull = (unsigned long long)snic->OutAddrMasks;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP_OUTADDRMASKS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutAddrMaskReps);
-	pmiPutValue("network.icmp.outaddrmaskreps", NULL, buf);
+	atom.ull = (unsigned long long)snic->OutAddrMaskReps;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP_OUTADDRMASKREPS, 0), &atom);
 }
 
 /*
@@ -2625,45 +2750,46 @@ void pcp_read_net_icmp_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_eicmp_stats(struct activity *a, int curr)
 {
-	char buf[64];
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
 	struct stats_net_eicmp
 		*sneic = (struct stats_net_eicmp *) a->buf[curr];
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InErrors);
-	pmiPutValue("network.icmp.inerrors", NULL, buf);
+	atom.ull = (unsigned long long)sneic->InErrors;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EICMP_INERRORS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutErrors);
-	pmiPutValue("network.icmp.outerrors", NULL, buf);
+	atom.ull = (unsigned long long)sneic->OutErrors;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EICMP_OUTERRORS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InDestUnreachs);
-	pmiPutValue("network.icmp.indestunreachs", NULL, buf);
+	atom.ull = (unsigned long long)sneic->InDestUnreachs;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EICMP_INDESTUNREACHS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutDestUnreachs);
-	pmiPutValue("network.icmp.outdestunreachs", NULL, buf);
+	atom.ull = (unsigned long long)sneic->OutDestUnreachs;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EICMP_OUTDESTUNREACHS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InTimeExcds);
-	pmiPutValue("network.icmp.intimeexcds", NULL, buf);
+	atom.ull = (unsigned long long)sneic->InTimeExcds;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EICMP_INTIMEEXCDS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutTimeExcds);
-	pmiPutValue("network.icmp.outtimeexcds", NULL, buf);
+	atom.ull = (unsigned long long)sneic->OutTimeExcds;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EICMP_OUTTIMEEXCDS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InParmProbs);
-	pmiPutValue("network.icmp.inparmprobs", NULL, buf);
+	atom.ull = (unsigned long long)sneic->InParmProbs;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EICMP_INPARMPROBS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutParmProbs);
-	pmiPutValue("network.icmp.outparmprobs", NULL, buf);
+	atom.ull = (unsigned long long)sneic->OutParmProbs;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EICMP_OUTPARMPROBS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InSrcQuenchs);
-	pmiPutValue("network.icmp.insrcquenchs", NULL, buf);
+	atom.ull = (unsigned long long)sneic->InSrcQuenchs;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EICMP_INSRCQUENCHS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutSrcQuenchs);
-	pmiPutValue("network.icmp.outsrcquenchs", NULL, buf);
+	atom.ull = (unsigned long long)sneic->OutSrcQuenchs;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EICMP_OUTSRCQUENCHS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InRedirects);
-	pmiPutValue("network.icmp.inredirects", NULL, buf);
+	atom.ull = (unsigned long long)sneic->InRedirects;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EICMP_INREDIRECTS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutRedirects);
-	pmiPutValue("network.icmp.outredirects", NULL, buf);
+	atom.ull = (unsigned long long)sneic->OutRedirects;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EICMP_OUTREDIRECTS, 0), &atom);
 }
 
 /*
@@ -2768,21 +2894,22 @@ void pcp_read_net_eicmp_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_tcp_stats(struct activity *a, int curr)
 {
-	char buf[64];
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
 	struct stats_net_tcp
 		*sntc = (struct stats_net_tcp *) a->buf[curr];
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sntc->ActiveOpens);
-	pmiPutValue("network.tcp.activeopens", NULL, buf);
+	atom.ull = (unsigned long long)sntc->ActiveOpens;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_TCP_ACTIVEOPENS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sntc->PassiveOpens);
-	pmiPutValue("network.tcp.passiveopens", NULL, buf);
+	atom.ull = (unsigned long long)sntc->PassiveOpens;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_TCP_PASSIVEOPENS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sntc->InSegs);
-	pmiPutValue("network.tcp.insegs", NULL, buf);
+	atom.ull = (unsigned long long)sntc->InSegs;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_TCP_INSEGS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sntc->OutSegs);
-	pmiPutValue("network.tcp.outsegs", NULL, buf);
+	atom.ull = (unsigned long long)sntc->OutSegs;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_TCP_OUTSEGS, 0), &atom);
 }
 
 /*
@@ -2839,24 +2966,25 @@ void pcp_read_net_tcp_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_etcp_stats(struct activity *a, int curr)
 {
-	char buf[64];
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
 	struct stats_net_etcp
 		*snetc = (struct stats_net_etcp *) a->buf[curr];
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snetc->AttemptFails);
-	pmiPutValue("network.tcp.attemptfails", NULL, buf);
+	atom.ull = (unsigned long long)snetc->AttemptFails;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ETCP_ATTEMPTFAILS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snetc->EstabResets);
-	pmiPutValue("network.tcp.estabresets", NULL, buf);
+	atom.ull = (unsigned long long)snetc->EstabResets;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ETCP_ESTABRESETS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snetc->RetransSegs);
-	pmiPutValue("network.tcp.retranssegs", NULL, buf);
+	atom.ull = (unsigned long long)snetc->RetransSegs;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ETCP_RETRANSSEGS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snetc->InErrs);
-	pmiPutValue("network.tcp.inerrs", NULL, buf);
+	atom.ull = (unsigned long long)snetc->InErrs;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ETCP_INERRS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snetc->OutRsts);
-	pmiPutValue("network.tcp.outrsts", NULL, buf);
+	atom.ull = (unsigned long long)snetc->OutRsts;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ETCP_OUTRSTS, 0), &atom);
 }
 
 /*
@@ -2919,21 +3047,22 @@ void pcp_read_net_etcp_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_udp_stats(struct activity *a, int curr)
 {
-	char buf[64];
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
 	struct stats_net_udp
 		*snuc = (struct stats_net_udp *) a->buf[curr];
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snuc->InDatagrams);
-	pmiPutValue("network.udp.indatagrams", NULL, buf);
+	atom.ull = (unsigned long long)snuc->InDatagrams;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_UDP_INDATAGRAMS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snuc->OutDatagrams);
-	pmiPutValue("network.udp.outdatagrams", NULL, buf);
+	atom.ull = (unsigned long long)snuc->OutDatagrams;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_UDP_OUTDATAGRAMS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snuc->NoPorts);
-	pmiPutValue("network.udp.noports", NULL, buf);
+	atom.ull = (unsigned long long)snuc->NoPorts;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_UDP_NOPORTS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snuc->InErrors);
-	pmiPutValue("network.udp.inerrors", NULL, buf);
+	atom.ull = (unsigned long long)snuc->InErrors;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_UDP_INERRORS, 0), &atom);
 }
 
 /*
@@ -2990,21 +3119,22 @@ void pcp_read_net_udp_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_sock6_stats(struct activity *a, int curr)
 {
-	char buf[64];
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
 	struct stats_net_sock6
 		*snsc = (struct stats_net_sock6 *) a->buf[curr];
 
-	pmsprintf(buf, sizeof(buf), "%u", snsc->tcp6_inuse);
-	pmiPutValue("network.sockstat.tcp6.inuse", NULL, buf);
+	atom.ul = (unsigned long)snsc->tcp6_inuse;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_SOCK6_TCPINUSE, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%u", snsc->udp6_inuse);
-	pmiPutValue("network.sockstat.udp6.inuse", NULL, buf);
+	atom.ul = (unsigned long)snsc->udp6_inuse;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_SOCK6_UDPINUSE, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%u", snsc->raw6_inuse);
-	pmiPutValue("network.sockstat.raw6.inuse", NULL, buf);
+	atom.ul = (unsigned long)snsc->raw6_inuse;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_SOCK6_RAWINUSE, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%u", snsc->frag6_inuse);
-	pmiPutValue("network.sockstat.frag6.inuse", NULL, buf);
+	atom.ul = (unsigned long)snsc->frag6_inuse;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_SOCK6_FRAGINUSE, 0), &atom);
 }
 
 /*
@@ -3061,39 +3191,40 @@ void pcp_read_net_sock6_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_ip6_stats(struct activity *a, int curr)
 {
-	char buf[64];
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
 	struct stats_net_ip6
 		*snic = (struct stats_net_ip6 *) a->buf[curr];
 
-	pmsprintf(buf, sizeof(buf), "%llu", snic->InReceives6);
-	pmiPutValue("network.ip6.inreceives", NULL, buf);
+	atom.ull = (unsigned long long)snic->InReceives6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_IP6_INRECEIVES, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", snic->OutForwDatagrams6);
-	pmiPutValue("network.ip6.outforwdatagrams", NULL, buf);
+	atom.ull = (unsigned long long)snic->OutForwDatagrams6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_IP6_OUTFORWDATAGRAMS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", snic->InDelivers6);
-	pmiPutValue("network.ip6.indelivers", NULL, buf);
+	atom.ull = (unsigned long long)snic->InDelivers6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_IP6_INDELIVERS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", snic->OutRequests6);
-	pmiPutValue("network.ip6.outrequests", NULL, buf);
+	atom.ull = (unsigned long long)snic->OutRequests6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_IP6_OUTREQUESTS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", snic->ReasmReqds6);
-	pmiPutValue("network.ip6.reasmreqds", NULL, buf);
+	atom.ull = (unsigned long long)snic->ReasmReqds6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_IP6_REASMREQDS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", snic->ReasmOKs6);
-	pmiPutValue("network.ip6.reasmoks", NULL, buf);
+	atom.ull = (unsigned long long)snic->ReasmOKs6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_IP6_REASMOKS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", snic->InMcastPkts6);
-	pmiPutValue("network.ip6.inmcastpkts", NULL, buf);
+	atom.ull = (unsigned long long)snic->InMcastPkts6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_IP6_INMCASTPKTS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", snic->OutMcastPkts6);
-	pmiPutValue("network.ip6.outmcastpkts", NULL, buf);
+	atom.ull = (unsigned long long)snic->OutMcastPkts6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_IP6_OUTMCASTPKTS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", snic->FragOKs6);
-	pmiPutValue("network.ip6.fragoks", NULL, buf);
+	atom.ull = (unsigned long long)snic->FragOKs6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_IP6_FRAGOKS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", snic->FragCreates6);
-	pmiPutValue("network.ip6.fragcreates", NULL, buf);
+	atom.ull = (unsigned long long)snic->FragCreates6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_IP6_FRAGCREATES, 0), &atom);
 }
 
 /*
@@ -3186,42 +3317,43 @@ void pcp_read_net_ip6_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_eip6_stats(struct activity *a, int curr)
 {
-	char buf[64];
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
 	struct stats_net_eip6
 		*sneic = (struct stats_net_eip6 *) a->buf[curr];
 
-	pmsprintf(buf, sizeof(buf), "%llu", sneic->InHdrErrors6);
-	pmiPutValue("network.ip6.inhdrerrors", NULL, buf);
+	atom.ull = (unsigned long long)sneic->InHdrErrors6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EIP6_INHDRERRORS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", sneic->InAddrErrors6);
-	pmiPutValue("network.ip6.inaddrerrors", NULL, buf);
+	atom.ull = (unsigned long long)sneic->InAddrErrors6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EIP6_INADDRERRORS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", sneic->InUnknownProtos6);
-	pmiPutValue("network.ip6.inunknownprotos", NULL, buf);
+	atom.ull = (unsigned long long)sneic->InUnknownProtos6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EIP6_INUNKNOWNPROTOS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", sneic->InTooBigErrors6);
-	pmiPutValue("network.ip6.intoobigerrors", NULL, buf);
+	atom.ull = (unsigned long long)sneic->InTooBigErrors6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EIP6_INTOOBIGERRORS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", sneic->InDiscards6);
-	pmiPutValue("network.ip6.indiscards", NULL, buf);
+	atom.ull = (unsigned long long)sneic->InDiscards6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EIP6_INDISCARDS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", sneic->OutDiscards6);
-	pmiPutValue("network.ip6.outdiscards", NULL, buf);
+	atom.ull = (unsigned long long)sneic->OutDiscards6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EIP6_OUTDISCARDS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", sneic->InNoRoutes6);
-	pmiPutValue("network.ip6.innoroutes", NULL, buf);
+	atom.ull = (unsigned long long)sneic->InNoRoutes6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EIP6_INNOROUTES, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", sneic->OutNoRoutes6);
-	pmiPutValue("network.ip6.outnoroutes", NULL, buf);
+	atom.ull = (unsigned long long)sneic->OutNoRoutes6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EIP6_OUTNOROUTES, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", sneic->ReasmFails6);
-	pmiPutValue("network.ip6.reasmfails", NULL, buf);
+	atom.ull = (unsigned long long)sneic->ReasmFails6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EIP6_REASMFAILS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", sneic->FragFails6);
-	pmiPutValue("network.ip6.fragfails", NULL, buf);
+	atom.ull = (unsigned long long)sneic->FragFails6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EIP6_FRAGFAILS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", sneic->InTruncatedPkts6);
-	pmiPutValue("network.ip6.intruncatedpkts", NULL, buf);
+	atom.ull = (unsigned long long)sneic->InTruncatedPkts6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EIP6_INTRUNCATEDPKTS, 0), &atom);
 }
 
 /*
@@ -3320,60 +3452,61 @@ void pcp_read_net_eip6_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_icmp6_stats(struct activity *a, int curr)
 {
-	char buf[64];
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
 	struct stats_net_icmp6
 		*snic = (struct stats_net_icmp6 *) a->buf[curr];
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InMsgs6);
-	pmiPutValue("network.icmp6.inmsgs", NULL, buf);
+	atom.ull = (unsigned long long)snic->InMsgs6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP6_INMSGS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutMsgs6);
-	pmiPutValue("network.icmp6.outmsgs", NULL, buf);
+	atom.ull = (unsigned long long)snic->OutMsgs6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP6_OUTMSGS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InEchos6);
-	pmiPutValue("network.icmp6.inechos", NULL, buf);
+	atom.ull = (unsigned long long)snic->InEchos6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP6_INECHOS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InEchoReplies6);
-	pmiPutValue("network.icmp6.inechoreplies", NULL, buf);
+	atom.ull = (unsigned long long)snic->InEchoReplies6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP6_INECHOREPLIES, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutEchoReplies6);
-	pmiPutValue("network.icmp6.outechoreplies", NULL, buf);
+	atom.ull = (unsigned long long)snic->OutEchoReplies6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP6_OUTECHOREPLIES, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InGroupMembQueries6);
-	pmiPutValue("network.icmp6.ingroupmembqueries", NULL, buf);
+	atom.ull = (unsigned long long)snic->InGroupMembQueries6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP6_INGROUPMEMBQUERIES, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InGroupMembResponses6);
-	pmiPutValue("network.icmp6.ingroupmembresponses", NULL, buf);
+	atom.ull = (unsigned long long)snic->InGroupMembResponses6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP6_INGROUPMEMBRESPONSES, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutGroupMembResponses6);
-	pmiPutValue("network.icmp6.outgroupmembresponses", NULL, buf);
+	atom.ull = (unsigned long long)snic->OutGroupMembResponses6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP6_OUTGROUPMEMBRESPONSES, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InGroupMembReductions6);
-	pmiPutValue("network.icmp6.ingroupmembreductions", NULL, buf);
+	atom.ull = (unsigned long long)snic->InGroupMembReductions6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP6_INGROUPMEMBREDUCTIONS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutGroupMembReductions6);
-	pmiPutValue("network.icmp6.outgroupmembreductions", NULL, buf);
+	atom.ull = (unsigned long long)snic->OutGroupMembReductions6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP6_OUTGROUPMEMBREDUCTIONS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InRouterSolicits6);
-	pmiPutValue("network.icmp6.inroutersolicits", NULL, buf);
+	atom.ull = (unsigned long long)snic->InRouterSolicits6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP6_INROUTERSOLICITS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutRouterSolicits6);
-	pmiPutValue("network.icmp6.outroutersolicits", NULL, buf);
+	atom.ull = (unsigned long long)snic->OutRouterSolicits6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP6_OUTROUTERSOLICITS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InRouterAdvertisements6);
-	pmiPutValue("network.icmp6.inrouteradvertisements", NULL, buf);
+	atom.ull = (unsigned long long)snic->InRouterAdvertisements6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP6_INROUTERADVERTISEMENTS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InNeighborSolicits6);
-	pmiPutValue("network.icmp6.inneighborsolicits", NULL, buf);
+	atom.ull = (unsigned long long)snic->InNeighborSolicits6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP6_INNEIGHBORSOLICITS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutNeighborSolicits6);
-	pmiPutValue("network.icmp6.outneighborsolicits", NULL, buf);
+	atom.ull = (unsigned long long)snic->OutNeighborSolicits6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP6_OUTNEIGHBORSOLICITS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->InNeighborAdvertisements6);
-	pmiPutValue("network.icmp6.inneighboradvertisements", NULL, buf);
+	atom.ull = (unsigned long long)snic->InNeighborAdvertisements6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP6_INNEIGHBORADVERTISEMENTS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snic->OutNeighborAdvertisements6);
-	pmiPutValue("network.icmp6.outneighboradvertisements", NULL, buf);
+	atom.ull = (unsigned long long)snic->OutNeighborAdvertisements6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP6_OUTNEIGHBORADVERTISEMENTS, 0), &atom);
 }
 
 /*
@@ -3508,42 +3641,43 @@ void pcp_read_net_icmp6_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_eicmp6_stats(struct activity *a, int curr)
 {
-	char buf[64];
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
 	struct stats_net_eicmp6
 		*sneic = (struct stats_net_eicmp6 *) a->buf[curr];
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InErrors6);
-	pmiPutValue("network.icmp6.inerrors", NULL, buf);
+	atom.ull = (unsigned long long)sneic->InErrors6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EICMP6_INERRORS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InDestUnreachs6);
-	pmiPutValue("network.icmp6.indestunreachs", NULL, buf);
+	atom.ull = (unsigned long long)sneic->InDestUnreachs6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EICMP6_INDESTUNREACHS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutDestUnreachs6);
-	pmiPutValue("network.icmp6.outdestunreachs", NULL, buf);
+	atom.ull = (unsigned long long)sneic->OutDestUnreachs6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EICMP6_OUTDESTUNREACHS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InTimeExcds6);
-	pmiPutValue("network.icmp6.intimeexcds", NULL, buf);
+	atom.ull = (unsigned long long)sneic->InTimeExcds6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EICMP6_INTIMEEXCDS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutTimeExcds6);
-	pmiPutValue("network.icmp6.outtimeexcds", NULL, buf);
+	atom.ull = (unsigned long long)sneic->OutTimeExcds6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EICMP6_OUTTIMEEXCDS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InParmProblems6);
-	pmiPutValue("network.icmp6.inparmproblems", NULL, buf);
+	atom.ull = (unsigned long long)sneic->InParmProblems6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EICMP6_INPARMPROBLEMS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutParmProblems6);
-	pmiPutValue("network.icmp6.outparmproblems", NULL, buf);
+	atom.ull = (unsigned long long)sneic->OutParmProblems6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EICMP6_OUTPARMPROBLEMS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InRedirects6);
-	pmiPutValue("network.icmp6.inredirects", NULL, buf);
+	atom.ull = (unsigned long long)sneic->InRedirects6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EICMP6_INREDIRECTS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutRedirects6);
-	pmiPutValue("network.icmp6.outredirects", NULL, buf);
+	atom.ull = (unsigned long long)sneic->OutRedirects6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EICMP6_OUTREDIRECTS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->InPktTooBigs6);
-	pmiPutValue("network.icmp6.inpkttoobigs", NULL, buf);
+	atom.ull = (unsigned long long)sneic->InPktTooBigs6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EICMP6_INPKTTOOBIGS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sneic->OutPktTooBigs6);
-	pmiPutValue("network.icmp6.outpkttoobigs", NULL, buf);
+	atom.ull = (unsigned long long)sneic->OutPktTooBigs6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EICMP6_OUTPKTTOOBIGS, 0), &atom);
 }
 
 /*
@@ -3642,21 +3776,22 @@ void pcp_read_net_eicmp6_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_udp6_stats(struct activity *a, int curr)
 {
-	char buf[64];
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
 	struct stats_net_udp6
 		*snuc = (struct stats_net_udp6 *) a->buf[curr];
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snuc->InDatagrams6);
-	pmiPutValue("network.udp6.indatagrams", NULL, buf);
+	atom.ull = (unsigned long long)snuc->InDatagrams6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_UDP6_INDATAGRAMS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snuc->OutDatagrams6);
-	pmiPutValue("network.udp6.outdatagrams", NULL, buf);
+	atom.ull = (unsigned long long)snuc->OutDatagrams6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_UDP6_OUTDATAGRAMS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snuc->NoPorts6);
-	pmiPutValue("network.udp6.noports", NULL, buf);
+	atom.ull = (unsigned long long)snuc->NoPorts6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_UDP6_NOPORTS, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) snuc->InErrors6);
-	pmiPutValue("network.udp6.inerrors", NULL, buf);
+	atom.ull = (unsigned long long)snuc->InErrors6;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_UDP6_INERRORS, 0), &atom);
 }
 
 /*
@@ -3713,9 +3848,11 @@ void pcp_read_net_udp6_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_pwr_cpufreq_stats(struct activity *a, int curr)
 {
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
 	int i;
 	struct stats_pwr_cpufreq *spc;
-	char buf[64], cpuno[64];
+	char cpuno[64];
 
 	for (i = 0; (i < a->nr[curr]) && (i < a->bitmap->b_size + 1); i++) {
 
@@ -3731,11 +3868,11 @@ __print_funct_t pcp_print_pwr_cpufreq_stats(struct activity *a, int curr)
 			continue;
 		}
 		else {
-			sprintf(cpuno, "cpu%d", i - 1);
+			pmsprintf(cpuno, sizeof(cpuno), "cpu%d", i - 1);
 		}
 
-		pmsprintf(buf, sizeof(buf), "%f", ((double) spc->cpufreq) / 100);
-		pmiPutValue("hinv.cpu.clock", cpuno, buf);
+		atom.f = (float)((double) spc->cpufreq) / 100;
+		pmiPutAtomValueHandle(ACT_HANDLE(m, POWER_PERCPU_CLOCK, pcp_find_slot(m, i - 1)), &atom);
 	}
 }
 
@@ -3781,25 +3918,30 @@ void pcp_read_pwr_cpufreq_stats(pmValueSet *values, struct activity *a, int curr
  */
 __print_funct_t pcp_print_pwr_fan_stats(struct activity *a, int curr)
 {
-	int i;
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
+	size_t slot;
+	int i, handle;
 	struct stats_pwr_fan *spc;
-	char buf[64], instance[32];
+	char instance[32];
 
 	for (i = 0; i < a->nr[curr]; i++) {
 
 		spc = (struct stats_pwr_fan *) ((char *) a->buf[curr] + i * a->msize);
 		sprintf(instance, "fan%d", i + 1);
+		slot = pcp_slot_for_item(a->item_list, instance);
 
-		pmsprintf(buf, sizeof(buf), "%llu",
-			 (unsigned long long) spc->rpm);
-		pmiPutValue("power.fan.rpm", instance, buf);
+		handle = ACT_HANDLE(m, POWER_FAN_RPM, slot);
+		atom.ull = (unsigned long long)spc->rpm;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu",
-			 (unsigned long long) (spc->rpm - spc->rpm_min));
-		pmiPutValue("power.fan.drpm", instance, buf);
+		handle = ACT_HANDLE(m, POWER_FAN_DRPM, slot);
+		atom.ull = (unsigned long long)(spc->rpm - spc->rpm_min);
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%s", spc->device);
-		pmiPutValue("power.fan.device", instance, buf);
+		handle = ACT_HANDLE(m, POWER_FAN_DEVICE, slot);
+		atom.cp = spc->device;
+		pmiPutAtomValueHandle(handle, &atom);
 	}
 }
 
@@ -3858,27 +4000,32 @@ void pcp_read_power_fan_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_pwr_temp_stats(struct activity *a, int curr)
 {
-	int i;
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
+	size_t slot;
+	int i, handle;
 	struct stats_pwr_temp *spc;
-	char buf[64], instance[32];
+	char instance[32];
 
 	for (i = 0; i < a->nr[curr]; i++) {
 
 		spc = (struct stats_pwr_temp *) ((char *) a->buf[curr] + i * a->msize);
 		sprintf(instance, "temp%d", i + 1);
+		slot = pcp_slot_for_item(a->item_list, instance);
 
-		pmsprintf(buf, sizeof(buf), "%f", spc->temp);
-		pmiPutValue("power.temp.celsius", instance, buf);
+		handle = ACT_HANDLE(m, POWER_TEMP_CELSIUS, slot);
+		atom.f = (float)spc->temp;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%f",
-			 (spc->temp_max - spc->temp_min) ?
+		handle = ACT_HANDLE(m, POWER_TEMP_PERCENT, slot);
+		atom.f = (float)(spc->temp_max - spc->temp_min) ?
 			 (spc->temp - spc->temp_min) / (spc->temp_max - spc->temp_min) * 100 :
-			 0.0);
-		pmiPutValue("power.temp.percent", instance, buf);
+			 0.0;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%s",
-			spc->device);
-		pmiPutValue("power.temp.device", instance, buf);
+		handle = ACT_HANDLE(m, POWER_TEMP_DEVICE, slot);
+		atom.cp = spc->device;
+		pmiPutAtomValueHandle(handle, &atom);
 	}
 }
 
@@ -3934,28 +4081,32 @@ void pcp_read_power_temp_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_pwr_in_stats(struct activity *a, int curr)
 {
-	int i;
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
+	size_t slot;
+	int i, handle;
 	struct stats_pwr_in *spc;
-	char buf[64], instance[32];
+	char instance[32];
 
 	for (i = 0; i < a->nr[curr]; i++) {
 
 		spc = (struct stats_pwr_in *) ((char *) a->buf[curr] + i * a->msize);
 		sprintf(instance, "in%d", i);
+		slot = pcp_slot_for_item(a->item_list, instance);
 
-		pmsprintf(buf, sizeof(buf), "%f",
-			 spc->in);
-		pmiPutValue("power.in.voltage", instance, buf);
+		handle = ACT_HANDLE(m, POWER_IN_VOLTAGE, slot);
+		atom.f = (float)spc->in;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%f",
-			 (spc->in_max - spc->in_min) ?
+		handle = ACT_HANDLE(m, POWER_IN_PERCENT, slot);
+		atom.f = (float)(spc->in_max - spc->in_min) ?
 			 (spc->in - spc->in_min) / (spc->in_max - spc->in_min) * 100 :
-			 0.0);
-		pmiPutValue("power.in.percent", instance, buf);
+			 0.0;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%s",
-			spc->device);
-		pmiPutValue("power.in.device", instance, buf);
+		handle = ACT_HANDLE(m, POWER_IN_DEVICE, slot);
+		atom.cp = spc->device;
+		pmiPutAtomValueHandle(handle, &atom);
 	}
 }
 
@@ -4011,26 +4162,32 @@ void pcp_read_power_in_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_pwr_bat_stats(struct activity *a, int curr)
 {
-	int i;
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
+	size_t slot;
+	int i, handle;
 	struct stats_pwr_bat *spbc;
-	char buf[64], bat_name[16];
+	char bat_name[16];
 
 	for (i = 0; i < a->nr[curr]; i++) {
 
 		spbc = (struct stats_pwr_bat *) ((char *) a->buf[curr] + i * a->msize);
 
 		pmsprintf(bat_name, sizeof(bat_name), "BAT%d", (int) spbc->bat_id);
+		slot = pcp_slot_for_item(a->item_list, bat_name);
 
-		pmsprintf(buf, sizeof(buf), "%u", (unsigned int) spbc->capacity);
-		pmiPutValue("power.bat.capacity", bat_name, buf);
+		handle = ACT_HANDLE(m, POWER_BAT_CAPACITY, slot);
+		atom.ul = (unsigned long)(unsigned int) spbc->capacity;
+		pmiPutAtomValueHandle(handle, &atom);
 
 		/* Battery status code should not be greater than or equal to BAT_STS_NR */
 		if (spbc->status >= BAT_STS_NR) {
 			spbc->status = 0;
 		}
 
-		pmsprintf(buf, sizeof(buf), "%s", bat_status[(unsigned int) spbc->status]);
-		pmiPutValue("power.bat.status", bat_name, buf);
+		handle = ACT_HANDLE(m, POWER_BAT_STATUS, slot);
+		atom.cp = (char *)bat_status[(unsigned int) spbc->status];
+		pmiPutAtomValueHandle(handle, &atom);
 	}
 }
 
@@ -4086,21 +4243,22 @@ void pcp_read_power_bat_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_huge_stats(struct activity *a, int curr)
 {
-	char buf[64];
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
 	struct stats_huge
 		*smc = (struct stats_huge *) a->buf[curr];
 
-	pmsprintf(buf, sizeof(buf), "%llu", smc->frhkb * 1024);
-	pmiPutValue("mem.util.hugepagesFreeBytes", NULL, buf);
+	atom.ull = (unsigned long long)smc->frhkb * 1024;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, MEM_HUGE_FREEBYTES, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", smc->tlhkb * 1024);
-	pmiPutValue("mem.util.hugepagesTotalBytes", NULL, buf);
+	atom.ull = (unsigned long long)smc->tlhkb * 1024;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, MEM_HUGE_TOTALBYTES, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", smc->rsvdhkb * 1024);
-	pmiPutValue("mem.util.hugepagesRsvdBytes", NULL, buf);
+	atom.ull = (unsigned long long)smc->rsvdhkb * 1024;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, MEM_HUGE_RSVDBYTES, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", smc->surphkb * 1024);
-	pmiPutValue("mem.util.hugepagesSurpBytes", NULL, buf);
+	atom.ull = (unsigned long long)smc->surphkb * 1024;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, MEM_HUGE_SURPBYTES, 0), &atom);
 }
 
 /*
@@ -4157,32 +4315,45 @@ void pcp_read_huge_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_pwr_usb_stats(struct activity *a, int curr)
 {
-	int i;
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
+	size_t slot;
+	int i, handle;
 	struct stats_pwr_usb *suc;
-	char buf[64], instance[32];
+	char name[64];
+	char vendorid[16], productid[16];
 
 	for (i = 0; i < a->nr[curr]; i++) {
 
 		suc = (struct stats_pwr_usb *) ((char *) a->buf[curr] + i * a->msize);
-		sprintf(instance, "usb%d", i);
+		pmsprintf(name, sizeof(name), "usb%d", i);
+		slot = pcp_slot_for_item(a->item_list, name);
 
-		pmsprintf(buf, sizeof(buf), "%u", suc->bus_nr);
-		pmiPutValue("power.usb.bus", instance, buf);
+		handle = ACT_HANDLE(m, POWER_USB_BUS, slot);
+		atom.ul = (unsigned long)suc->bus_nr;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%x", suc->vendor_id);
-		pmiPutValue("power.usb.vendorId", instance, buf);
+		pmsprintf(vendorid, sizeof(vendorid), "%x", suc->vendor_id);
+		handle = ACT_HANDLE(m, POWER_USB_VENDORID, slot);
+		atom.cp = vendorid;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%x", suc->product_id);
-		pmiPutValue("power.usb.productId", instance, buf);
+		pmsprintf(productid, sizeof(productid), "%x", suc->product_id);
+		handle = ACT_HANDLE(m, POWER_USB_PRODUCTID, slot);
+		atom.cp = productid;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%u", suc->bmaxpower << 1);
-		pmiPutValue("power.usb.maxpower", instance, buf);
+		handle = ACT_HANDLE(m, POWER_USB_MAXPOWER, slot);
+		atom.ul = (unsigned long)suc->bmaxpower << 1;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%s", suc->manufacturer);
-		pmiPutValue("power.usb.manufacturer", instance, buf);
+		handle = ACT_HANDLE(m, POWER_USB_MANUFACTURER, slot);
+		atom.cp = suc->manufacturer;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%s", suc->product);
-		pmiPutValue("power.usb.productName", instance, buf);
+		handle = ACT_HANDLE(m, POWER_USB_PRODUCTNAME, slot);
+		atom.cp = suc->product;
+		pmiPutAtomValueHandle(handle, &atom);
 	}
 }
 
@@ -4256,9 +4427,11 @@ void pcp_read_power_usb_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_filesystem_stats(struct activity *a, int curr)
 {
-	int i;
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
+	size_t slot;
+	int i, handle;
 	struct stats_filesystem *sfc;
-	char buf[64];
 	char *dev_name;
 
 	for (i = 0; i < a->nr[curr]; i++) {
@@ -4273,33 +4446,40 @@ __print_funct_t pcp_print_filesystem_stats(struct activity *a, int curr)
 				/* Device not found */
 				continue;
 		}
+		slot = pcp_slot_for_item(a->item_list, dev_name);
 
-		pmsprintf(buf, sizeof(buf), "%llu", sfc->f_blocks / 1024);
-		pmiPutValue("filesys.capacity", dev_name, buf);
+		handle = ACT_HANDLE(m, FILESYS_CAPACITY, slot);
+		atom.ull = (unsigned long long)sfc->f_blocks / 1024;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", sfc->f_bfree / 1024);
-		pmiPutValue("filesys.free", dev_name, buf);
+		handle = ACT_HANDLE(m, FILESYS_FREE, slot);
+		atom.ull = (unsigned long long)sfc->f_bfree / 1024;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu",
-			 (sfc->f_blocks - sfc->f_bfree) / 1024);
-		pmiPutValue("filesys.used", dev_name, buf);
+		handle = ACT_HANDLE(m, FILESYS_USED, slot);
+		atom.ull = (unsigned long long)(sfc->f_blocks - sfc->f_bfree) / 1024;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%f",
-			 sfc->f_blocks ? SP_VALUE(sfc->f_bfree, sfc->f_blocks, sfc->f_blocks)
-				       : 0.0);
-		pmiPutValue("filesys.full", dev_name, buf);
+		handle = ACT_HANDLE(m, FILESYS_FULL, slot);
+		atom.d = (double)sfc->f_blocks ? SP_VALUE(sfc->f_bfree, sfc->f_blocks, sfc->f_blocks)
+				       : 0.0;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", sfc->f_files);
-		pmiPutValue("filesys.maxfiles", dev_name, buf);
+		handle = ACT_HANDLE(m, FILESYS_MAXFILES, slot);
+		atom.ull = (unsigned long long)sfc->f_files;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", sfc->f_ffree);
-		pmiPutValue("filesys.freefiles", dev_name, buf);
+		handle = ACT_HANDLE(m, FILESYS_FREEFILES, slot);
+		atom.ull = (unsigned long long)sfc->f_ffree;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", sfc->f_files - sfc->f_ffree);
-		pmiPutValue("filesys.usedfiles", dev_name, buf);
+		handle = ACT_HANDLE(m, FILESYS_USEDFILES, slot);
+		atom.ull = (unsigned long long)sfc->f_files - sfc->f_ffree;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", sfc->f_bavail / 1024);
-		pmiPutValue("filesys.avail", dev_name, buf);
+		handle = ACT_HANDLE(m, FILESYS_AVAIL, slot);
+		atom.ull = (unsigned long long)sfc->f_bavail / 1024;
+		pmiPutAtomValueHandle(handle, &atom);
 	}
 }
 
@@ -4378,25 +4558,32 @@ void pcp_read_filesystem_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_fchost_stats(struct activity *a, int curr)
 {
-	int i;
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
+	size_t slot;
+	int i, handle;
 	struct stats_fchost *sfcc;
-	char buf[64];
 
 	for (i = 0; i < a->nr[curr]; i++) {
 
 		sfcc = (struct stats_fchost *) ((char *) a->buf[curr] + i * a->msize);
+		slot = pcp_slot_for_item(a->item_list, sfcc->fchost_name);
 
-		pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sfcc->f_rxframes);
-		pmiPutValue("fchost.in.frames", sfcc->fchost_name, buf);
+		handle = ACT_HANDLE(m, FCHOST_INFRAMES, slot);
+		atom.ull = (unsigned long long)sfcc->f_rxframes;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sfcc->f_txframes);
-		pmiPutValue("fchost.out.frames", sfcc->fchost_name, buf);
+		handle = ACT_HANDLE(m, FCHOST_OUTFRAMES, slot);
+		atom.ull = (unsigned long long)sfcc->f_txframes;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sfcc->f_rxwords * 4);
-		pmiPutValue("fchost.in.bytes", sfcc->fchost_name, buf);
+		handle = ACT_HANDLE(m, FCHOST_INBYTES, slot);
+		atom.ull = (unsigned long long)sfcc->f_rxwords * 4;
+		pmiPutAtomValueHandle(handle, &atom);
 
-		pmsprintf(buf, sizeof(buf), "%llu", (unsigned long long) sfcc->f_txwords * 4);
-		pmiPutValue("fchost.out.bytes", sfcc->fchost_name, buf);
+		handle = ACT_HANDLE(m, FCHOST_OUTBYTES, slot);
+		atom.ull = (unsigned long long)sfcc->f_txwords * 4;
+		pmiPutAtomValueHandle(handle, &atom);
 	}
 }
 
@@ -4465,21 +4652,22 @@ void pcp_read_fchost_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_psicpu_stats(struct activity *a, int curr)
 {
-	char buf[64];
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
 	struct stats_psi_cpu
 		*psic = (struct stats_psi_cpu *) a->buf[curr];
 
-	pmsprintf(buf, sizeof(buf), "%f", (double) psic->some_acpu_10 / 100);
-	pmiPutValue("kernel.all.pressure.cpu.some.avg", "10 second", buf);
+	atom.f = (float)psic->some_acpu_10 / 100;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PSI_CPU_SOMEAVG, pcp_find_slot(m, 10)), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%f", (double) psic->some_acpu_60 / 100);
-	pmiPutValue("kernel.all.pressure.cpu.some.avg", "1 minute", buf);
+	atom.f = (float)psic->some_acpu_60 / 100;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PSI_CPU_SOMEAVG, pcp_find_slot(m, 60)), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%f", (double) psic->some_acpu_300 / 100);
-	pmiPutValue("kernel.all.pressure.cpu.some.avg", "5 minute", buf);
+	atom.f = (float)psic->some_acpu_300 / 100;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PSI_CPU_SOMEAVG, pcp_find_slot(m, 300)), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", psic->some_cpu_total);
-	pmiPutValue("kernel.all.pressure.cpu.some.total", NULL, buf);
+	atom.ull = (unsigned long long)psic->some_cpu_total;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PSI_CPU_SOMETOTAL, 0), &atom);
 }
 
 /*
@@ -4547,33 +4735,34 @@ void pcp_read_psicpu_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_psiio_stats(struct activity *a, int curr)
 {
-	char buf[64];
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
 	struct stats_psi_io
 		*psic = (struct stats_psi_io *) a->buf[curr];
 
-	pmsprintf(buf, sizeof(buf), "%f", (double) psic->some_aio_10 / 100);
-	pmiPutValue("kernel.all.pressure.io.some.avg", "10 second", buf);
+	atom.f = (float)psic->some_aio_10 / 100;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PSI_IO_SOMEAVG, pcp_find_slot(m, 10)), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%f", (double) psic->some_aio_60 / 100);
-	pmiPutValue("kernel.all.pressure.io.some.avg", "1 minute", buf);
+	atom.f = (float)psic->some_aio_60 / 100;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PSI_IO_SOMEAVG, pcp_find_slot(m, 60)), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%f", (double) psic->some_aio_300 / 100);
-	pmiPutValue("kernel.all.pressure.io.some.avg", "5 minute", buf);
+	atom.f = (float)psic->some_aio_300 / 100;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PSI_IO_SOMEAVG, pcp_find_slot(m, 300)), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", psic->some_io_total);
-	pmiPutValue("kernel.all.pressure.io.some.total", NULL, buf);
+	atom.ull = (unsigned long long)psic->some_io_total;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PSI_IO_SOMETOTAL, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%f", (double) psic->full_aio_10 / 100);
-	pmiPutValue("kernel.all.pressure.io.full.avg", "10 second", buf);
+	atom.f = (float)psic->full_aio_10 / 100;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PSI_IO_FULLAVG, pcp_find_slot(m, 10)), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%f", (double) psic->full_aio_60 / 100);
-	pmiPutValue("kernel.all.pressure.io.full.avg", "1 minute", buf);
+	atom.f = (float)psic->full_aio_60 / 100;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PSI_IO_FULLAVG, pcp_find_slot(m, 60)), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%f", (double) psic->full_aio_300 / 100);
-	pmiPutValue("kernel.all.pressure.io.full.avg", "5 minute", buf);
+	atom.f = (float)psic->full_aio_300 / 100;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PSI_IO_FULLAVG, pcp_find_slot(m, 300)), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", psic->full_io_total);
-	pmiPutValue("kernel.all.pressure.io.full.total", NULL, buf);
+	atom.ull = (unsigned long long)psic->full_io_total;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PSI_IO_FULLTOTAL, 0), &atom);
 }
 
 /*
@@ -4675,33 +4864,34 @@ void pcp_read_psiio_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_psimem_stats(struct activity *a, int curr)
 {
-	char buf[64];
+	struct act_metrics *m = a->metrics;
+	pmAtomValue atom;
 	struct stats_psi_mem
 		*psic = (struct stats_psi_mem *) a->buf[curr];
 
-	pmsprintf(buf, sizeof(buf), "%f", (double) psic->some_amem_10 / 100);
-	pmiPutValue("kernel.all.pressure.memory.some.avg", "10 second", buf);
+	atom.f = (float)psic->some_amem_10 / 100;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PSI_MEM_SOMEAVG, pcp_find_slot(m, 10)), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%f", (double) psic->some_amem_60 / 100);
-	pmiPutValue("kernel.all.pressure.memory.some.avg", "1 minute", buf);
+	atom.f = (float)psic->some_amem_60 / 100;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PSI_MEM_SOMEAVG, pcp_find_slot(m, 60)), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%f", (double) psic->some_amem_300 / 100);
-	pmiPutValue("kernel.all.pressure.memory.some.avg", "5 minute", buf);
+	atom.f = (float)psic->some_amem_300 / 100;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PSI_MEM_SOMEAVG, pcp_find_slot(m, 300)), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", psic->some_mem_total);
-	pmiPutValue("kernel.all.pressure.memory.some.total", NULL, buf);
+	atom.ull = (unsigned long long)psic->some_mem_total;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PSI_MEM_SOMETOTAL, 0), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%f", (double) psic->full_amem_10 / 100);
-	pmiPutValue("kernel.all.pressure.memory.full.avg", "10 second", buf);
+	atom.f = (float)psic->full_amem_10 / 100;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PSI_MEM_FULLAVG, pcp_find_slot(m, 10)), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%f", (double) psic->full_amem_60 / 100);
-	pmiPutValue("kernel.all.pressure.memory.full.avg", "1 minute", buf);
+	atom.f = (float)psic->full_amem_60 / 100;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PSI_MEM_FULLAVG, pcp_find_slot(m, 60)), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%f", (double) psic->full_amem_300 / 100);
-	pmiPutValue("kernel.all.pressure.memory.full.avg", "5 minute", buf);
+	atom.f = (float)psic->full_amem_300 / 100;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PSI_MEM_FULLAVG, pcp_find_slot(m, 300)), &atom);
 
-	pmsprintf(buf, sizeof(buf), "%llu", psic->full_mem_total);
-	pmiPutValue("kernel.all.pressure.memory.full.total", NULL, buf);
+	atom.ull = (unsigned long long)psic->full_mem_total;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, PSI_MEM_FULLTOTAL, 0), &atom);
 }
 
 /*
@@ -4936,7 +5126,7 @@ void pcp_read_stats(pmValueSet *values, struct file_header *header, int curr)
 		case PMID_CPU_PERCPU_SYS:
 		case PMID_CPU_PERCPU_IDLE:
 		case PMID_CPU_PERCPU_WAITTOTAL:
-		case PMID_CPU_PERCPU_IRQTOTAL:
+		case PMID_CPU_PERCPU_CPU_INTR:
 		case PMID_CPU_PERCPU_IRQSOFT:
 		case PMID_CPU_PERCPU_IRQHARD:
 		case PMID_CPU_PERCPU_STEAL:
@@ -5014,6 +5204,7 @@ void pcp_read_stats(pmValueSet *values, struct file_header *header, int curr)
 		case PMID_MEM_PHYS_MB:
 		case PMID_MEM_PHYS_KB:
 		case PMID_MEM_UTIL_FREE:
+		case PMID_MEM_UTIL_SHARED:
 		case PMID_MEM_UTIL_AVAIL:
 		case PMID_MEM_UTIL_USED:
 		case PMID_MEM_UTIL_BUFFER:
@@ -5419,6 +5610,27 @@ build_sadc_activities_string(char *buf, size_t len)
 
 /*
  ***************************************************************************
+ * Register all sadc.* provenance metrics and populate write handles.
+ * Safe to call multiple times — pmiAddMetric is idempotent for the same
+ * metric, and pcp_alloc_handle overwrites the stored handle with the
+ * current session value (which is identical across calls in one session).
+ ***************************************************************************
+ */
+void
+pcp_register_sadc_metrics(void)
+{
+	size_t i;
+
+	for (i = 0; i < SADC_METRIC_COUNT; i++) {
+		const pmDesc *d = &sadc_metric_descs[i];
+		pmiAddMetric(sadc_metric_names[i],
+			     d->pmid, d->type, d->indom, d->sem, d->units);
+		pcp_alloc_handle(&sadc_metrics, i, 0, PM_IN_NULL, NULL);
+	}
+}
+
+/*
+ ***************************************************************************
  * Register sadc self-description metrics and write their initial values.
  * Called once when a PCP archive is first opened and again after each
  * restart mark (in case sadc was upgraded between sessions).
@@ -5441,38 +5653,28 @@ build_sadc_activities_string(char *buf, size_t len)
 void
 pcp_write_sadc_header(long interval_secs)
 {
-	char	abuf[1024];
-	char	ibuf[32];
+	char		abuf[1024];
+	pmAtomValue	atom;
 
 	/* Context label: presence of "sadc":true identifies the archive */
 	pmiPutLabel(PM_LABEL_CONTEXT, 0, 0, "sadc", "true");
 
-	/* sadc.version */
-	pmiAddMetric("sadc.version",
-		     PM_IN_NULL, PM_TYPE_STRING, PM_INDOM_NULL, PM_SEM_DISCRETE,
-		     pmiUnits(0, 0, 0, 0, 0, 0));
-	pmiPutValue("sadc.version", NULL, VERSION);
+	/* Register all sadc.* metrics and populate handles */
+	pcp_register_sadc_metrics();
 
-	/* sadc.activities */
-	pmiAddMetric("sadc.activities",
-		     PM_IN_NULL, PM_TYPE_STRING, PM_INDOM_NULL, PM_SEM_DISCRETE,
-		     pmiUnits(0, 0, 0, 0, 0, 0));
+	atom.cp = VERSION;
+	pmiPutAtomValueHandle(ACT_HANDLE(&sadc_metrics, SADC_VERSION, 0), &atom);
+
 	build_sadc_activities_string(abuf, sizeof(abuf));
-	pmiPutValue("sadc.activities", NULL, abuf);
+	atom.cp = abuf;
+	pmiPutAtomValueHandle(ACT_HANDLE(&sadc_metrics, SADC_ACTIVITIES, 0), &atom);
 
 	/* sadc.interval — only meaningful for normal collection invocations */
 	if (interval_secs > 0) {
-		pmiAddMetric("sadc.interval",
-			     PM_IN_NULL, PM_TYPE_U32, PM_INDOM_NULL, PM_SEM_DISCRETE,
-			     pmiUnits(0, 1, 0, 0, PM_TIME_SEC, 0));
-		pmsprintf(ibuf, sizeof(ibuf), "%ld", interval_secs);
-		pmiPutValue("sadc.interval", NULL, ibuf);
+		atom.ul = (unsigned long)interval_secs;
+		pmiPutAtomValueHandle(ACT_HANDLE(&sadc_metrics, SADC_INTERVAL, 0), &atom);
 	}
-
-	/* sadc.comment — pre-register so it is always in .meta */
-	pmiAddMetric("sadc.comment",
-		     PM_IN_NULL, PM_TYPE_STRING, PM_INDOM_NULL, PM_SEM_DISCRETE,
-		     pmiUnits(0, 0, 0, 0, 0, 0));
+	/* sadc.comment is pre-registered so it always appears in .meta */
 }
 
 /*
@@ -5500,26 +5702,101 @@ pcp_write_sadc_special_record(const char *comment, unsigned int cpu_nr,
 {
 	if (comment[0]) {
 		/* Comment: annotation only, no discontinuity mark */
-		pmiPutValue("sadc.comment", NULL, comment);
+		pmAtomValue atom;
+		atom.cp = (char *)comment;
+		pmiPutAtomValueHandle(ACT_HANDLE(&sadc_metrics, SADC_COMMENT, 0), &atom);
 	}
 	else {
 		/* Restart: mark the gap then refresh boundary metadata */
-		char	hbuf[32];
-		char	abuf[1024];
+		char        abuf[1024];
+		pmAtomValue atom;
+		int         h;
 
 		pmiPutMark();
 
-		pmsprintf(hbuf, sizeof(hbuf), "%u",
-			  cpu_nr > 1 ? cpu_nr - 1 : 1);
-		pmiPutValue("hinv.ncpu", NULL, hbuf);
+		/* Refresh hinv.ncpu via the file_header_metrics handle */
+		h = ACT_HANDLE(&file_header_metrics, FILE_HEADER_CPU_COUNT, 0);
+		atom.ul = cpu_nr > 1 ? cpu_nr - 1 : 1;
+		pmiPutAtomValueHandle(h, &atom);
 
-		pmiPutValue("sadc.version", NULL, VERSION);
+		atom.cp = VERSION;
+		pmiPutAtomValueHandle(ACT_HANDLE(&sadc_metrics, SADC_VERSION, 0), &atom);
+
 		build_sadc_activities_string(abuf, sizeof(abuf));
-		pmiPutValue("sadc.activities", NULL, abuf);
+		atom.cp = abuf;
+		pmiPutAtomValueHandle(ACT_HANDLE(&sadc_metrics, SADC_ACTIVITIES, 0), &atom);
 	}
 
 	pmiHighResWrite((int64_t) timestamp, 0);
 	pmiEnd();
+}
+
+/*
+ ***************************************************************************
+ * Read optional sadc self-description metrics from the current PCP archive
+ * context.  These metrics are written by sadc -O pcp; they may not be
+ * present in archives created by other tools (pmlogger, sadf -l etc.).
+ *
+ * OUT:
+ * @version	If non-NULL and the metric exists: filled with the sysstat
+ *		version string.  Caller must free().  Set to NULL on failure.
+ * @interval	If non-NULL and the metric exists: filled with the nominal
+ *		collection interval in seconds.  Set to 0 on failure.
+ ***************************************************************************
+ */
+void
+pcp_read_sadc_metrics(char **version, long *interval)
+{
+	pmID		pmids[2];
+	pmDesc		descs[2];
+	pmResult	*result;
+	const char	*names[2] = {"sadc.version", "sadc.interval"};
+	int		n = 0, sts;
+
+	if (version)  *version  = NULL;
+	if (interval) *interval = 0;
+
+	/*
+	 * Look up metrics by name — their pmIDs are assigned dynamically
+	 * at archive creation time so we cannot hardcode them.
+	 */
+	sts = pmLookupName(2, names, pmids);
+	if (sts < 0)
+		return;		/* Neither metric is in the archive */
+
+	for (int i = 0; i < 2; i++) {
+		if (pmids[i] == PM_ID_NULL)
+			continue;
+		if (pmLookupDesc(pmids[i], &descs[i]) < 0)
+			pmids[i] = PM_ID_NULL;
+		else
+			n++;
+	}
+	if (n == 0)
+		return;
+
+	if (pmFetch(2, pmids, &result) < 0)
+		return;
+
+	for (int i = 0; i < result->numpmid; i++) {
+		pmValueSet *vset = result->vset[i];
+		pmAtomValue av;
+
+		if (vset->numval < 1 || vset->pmid == PM_ID_NULL)
+			continue;
+
+		if (version && vset->pmid == pmids[0] &&
+		    pmExtractValue(vset->valfmt, &vset->vlist[0],
+				   PM_TYPE_STRING, &av, PM_TYPE_STRING) == 0) {
+			*version = av.cp;	/* caller frees */
+		}
+		else if (interval && vset->pmid == pmids[1] &&
+			 pmExtractValue(vset->valfmt, &vset->vlist[0],
+					PM_TYPE_U32, &av, PM_TYPE_U32) == 0) {
+			*interval = (long) av.ul;
+		}
+	}
+	pmFreeResult(result);
 }
 
 /*
@@ -5534,7 +5811,7 @@ pcp_write_sadc_special_record(const char *comment, unsigned int cpu_nr,
  * @flags	Flags for common options and system state.
  ***************************************************************************
  */
-void check_pcpfile_actlist(char *from_file, struct activity *act[], uint64_t flags)
+void check_pcpfile_actlist(const char *from_file, struct activity *act[], uint64_t flags)
 {
 	struct act_metrics *metrics;
 	pmInDom instdomain;
@@ -5619,7 +5896,234 @@ int read_stats_from_result(pmResult *result, struct file_header *header, int cur
 	}
 
 	record_hdr[curr].ust_time = result->timestamp.tv_sec;
-	record_hdr[curr].uptime_cs = result->timestamp.tv_sec / 100;
+	/*
+	 * Encode the Unix timestamp (seconds) as centiseconds so that
+	 * get_itv_value() computes the correct interval between samples:
+	 *   itv = (T2 * 100) - (T1 * 100) = (T2 - T1) * 100 centiseconds.
+	 * Only overwrite if kernel.all.uptime was not already set by pcp_read_stats.
+	 */
+	if (!record_hdr[curr].uptime_cs)
+		record_hdr[curr].uptime_cs = (unsigned long long)result->timestamp.tv_sec * 100;
 
 	return 0;
 }
+
+/*
+ ***************************************************************************
+ * Register and stage the file-header metrics that sar/sadf read to print
+ * the report header (CPU count, uname strings).  Written once at archive
+ * open time using pmiPutAtomValueHandle after pmiAddMetric.
+ *
+ * IN:
+ * @hdr		File header supplying CPU count and uname fields.
+ ***************************************************************************
+ */
+void pcp_write_file_header_metrics(const struct file_header *hdr)
+{
+	pmAtomValue atom;
+	size_t i;
+
+	/* Register each metric and populate its handle via the descriptor table */
+	for (i = 0; i < FILE_HEADER_METRIC_COUNT; i++) {
+		const pmDesc *d = &file_header_metric_descs[i];
+		const char   *n =  file_header_metric_names[i];
+		pmiAddMetric(n, d->pmid, d->type, d->indom, d->sem, d->units);
+		pcp_alloc_handle(&file_header_metrics, i, 0, PM_IN_NULL, NULL);
+	}
+
+	atom.ul = hdr->sa_cpu_nr > 1 ? hdr->sa_cpu_nr - 1 : 1;
+	pmiPutAtomValueHandle(ACT_HANDLE(&file_header_metrics, FILE_HEADER_CPU_COUNT, 0), &atom);
+
+	atom.ul = hdr->sa_hz ? hdr->sa_hz : 100UL;
+	pmiPutAtomValueHandle(ACT_HANDLE(&file_header_metrics, FILE_HEADER_KERNEL_HERTZ, 0), &atom);
+
+	atom.cp = (char *)hdr->sa_sysname;
+	pmiPutAtomValueHandle(ACT_HANDLE(&file_header_metrics, FILE_HEADER_UNAME_SYSNAME, 0), &atom);
+
+	atom.cp = (char *)hdr->sa_release;
+	pmiPutAtomValueHandle(ACT_HANDLE(&file_header_metrics, FILE_HEADER_UNAME_RELEASE, 0), &atom);
+
+	atom.cp = (char *)hdr->sa_machine;
+	pmiPutAtomValueHandle(ACT_HANDLE(&file_header_metrics, FILE_HEADER_UNAME_MACHINE, 0), &atom);
+
+	atom.cp = (char *)hdr->sa_nodename;
+	pmiPutAtomValueHandle(ACT_HANDLE(&file_header_metrics, FILE_HEADER_UNAME_NODENAME, 0), &atom);
+}
+
+/*
+ ***************************************************************************
+ * Write one PCP sample timestamp for the sadf->PCP write path.
+ *
+ * IN:
+ * @ust_time	Unix epoch timestamp (seconds).
+ ***************************************************************************
+ */
+void pcp_write_sadf_sample(unsigned long long ust_time)
+{
+	int rc;
+
+	if ((rc = pmiHighResWrite((int64_t)ust_time, 0)) < 0) {
+		/* Non-fatal: skip records with out-of-order timestamps (e.g. corrupt input) */
+		if (rc == PM_ERR_LOGREC)
+			fprintf(stderr, _("PCP: skipping out-of-order timestamp %llu: %s\n"),
+				ust_time, pmiErrStr(rc));
+		else {
+			fprintf(stderr, _("PCP: pmiHighResWrite: %s\n"), pmiErrStr(rc));
+			exit(4);
+		}
+	}
+}
+
+/*
+ ***************************************************************************
+ * Open a PCP archive for sadf->PCP conversion and register file-header
+ * metrics.  Mirrors the F_BEGIN block of print_pcp_header().
+ *
+ * IN:
+ * @dfile	Destination archive base path.
+ * @hdr		File header supplying timezone, hostname, and uname fields.
+ ***************************************************************************
+ */
+void pcp_open_sadf_archive(const char *dfile, const struct file_header *hdr)
+{
+	/* Initialise the hz global so JIFFIES_TO_MSEC works in pcp_print_* */
+	if (hdr->sa_hz)
+		hz = hdr->sa_hz;
+
+	pmiStart(dfile, FALSE);
+	pmiSetTimezone(hdr->sa_tzname);
+	pmiSetHostname(hdr->sa_nodename);
+	pcp_write_file_header_metrics(hdr);
+	pcp_register_sadc_metrics();
+}
+
+/*
+ ***************************************************************************
+ * Close the sadf->PCP archive, optionally writing a final sample first.
+ *
+ * IN:
+ * @ust_time	Timestamp for the initial sample (0 = skip write).
+ ***************************************************************************
+ */
+void pcp_close_sadf_archive(unsigned long long ust_time)
+{
+	if (ust_time)
+		pcp_write_sadf_sample(ust_time);
+	pmiEnd();
+}
+
+/*
+ ***************************************************************************
+ * Write a restart record to the sadf->PCP archive.
+ *
+ * IN:
+ * @hdr		File header (for CPU count).
+ * @ust_time	Record timestamp.
+ ***************************************************************************
+ */
+void pcp_write_sadf_restart(const struct file_header *hdr,
+			    unsigned long long ust_time)
+{
+	pmAtomValue atom;
+
+	/*
+	 * Ensure sadc.* metrics are registered and handles populated.
+	 * pcp_register_sadc_metrics() is idempotent — safe to call each time.
+	 */
+	pcp_register_sadc_metrics();
+
+	/* Mark the discontinuity so tools don't compute rates across the gap */
+	pmiPutMark();
+
+	/* sadc.restarts = 1 signals a restart event at this timestamp */
+	atom.ul = 1;
+	pmiPutAtomValueHandle(ACT_HANDLE(&sadc_metrics, SADC_RESTARTS, 0), &atom);
+
+	/*
+	 * hinv.ncpu is updated via the file_header_metrics handle so the
+	 * new CPU count is visible immediately after the discontinuity.
+	 */
+	atom.ul = hdr->sa_cpu_nr > 1 ? hdr->sa_cpu_nr - 1 : 1;
+	pmiPutAtomValueHandle(ACT_HANDLE(&file_header_metrics, FILE_HEADER_CPU_COUNT, 0), &atom);
+
+	pcp_write_sadf_sample(ust_time);
+}
+
+/*
+ ***************************************************************************
+ * Write a comment record to the sadf->PCP archive.
+ *
+ * IN:
+ * @comment	Comment string.
+ * @ust_time	Record timestamp.
+ ***************************************************************************
+ */
+void pcp_write_sadf_comment(const char *comment, unsigned long long ust_time)
+{
+	pmAtomValue atom;
+
+	pcp_register_sadc_metrics();
+
+	atom.cp = (char *)comment;
+	pmiPutAtomValueHandle(ACT_HANDLE(&sadc_metrics, SADC_COMMENT, 0), &atom);
+	pcp_write_sadf_sample(ust_time);
+}
+
+#ifdef HAVE_PMI_APPEND
+/*
+ ***************************************************************************
+ * Open a PCP archive for sadc direct-write mode.  Returns the pmiStart
+ * status so the caller can handle failure (fall back to native .sa only).
+ *
+ * IN:
+ * @path	Archive base path.
+ * @hdr		File header supplying hostname and timezone.
+ *
+ * RETURNS:
+ * pmiStart() return value (negative on error).
+ ***************************************************************************
+ */
+int pcp_open_sadc_archive(const char *path, const struct file_header *hdr)
+{
+	int sts;
+
+	sts = pmiStart(path, PMI_APPEND);
+	if (sts < 0)
+		return sts;
+	pmiSetHostname(hdr->sa_nodename);
+	pmiSetTimezone(hdr->sa_tzname);
+	return sts;
+}
+
+/*
+ ***************************************************************************
+ * Write one PCP sample timestamp for the sadc direct-write path.
+ *
+ * IN:
+ * @ust_time	Unix epoch timestamp (seconds).
+ * @flags	sadc flags (for error-mode handling).
+ *
+ * RETURNS:
+ * 0 on success, negative PCP error code on failure.
+ ***************************************************************************
+ */
+int pcp_write_sadc_sample(unsigned long long ust_time, uint64_t flags)
+{
+	int sts;
+
+	sts = pmiHighResWrite((int64_t)ust_time, 0);
+	if (sts < 0)
+		fprintf(stderr, _("PCP write error: %s\n"), pmiErrStr(sts));
+	return sts;
+}
+
+/*
+ ***************************************************************************
+ * Close the sadc PCP archive.
+ ***************************************************************************
+ */
+void pcp_close_sadc_archive(void)
+{
+	pmiEnd();
+}
+#endif /* HAVE_PMI_APPEND */

@@ -108,12 +108,27 @@ __print_funct_t pcp_print_psimem_stats
 	(struct activity *, int);
 
 /* sadc self-description and event functions */
+void pcp_register_sadc_metrics(void);
 void pcp_write_sadc_header(long interval_secs);
 void pcp_write_sadc_special_record(const char *comment, unsigned int cpu_nr,
 				   unsigned long long timestamp);
 
 /* Shared PCP archive reading helpers (used by sar and sadf) */
-void check_pcpfile_actlist(char *from_file, struct activity *act[], uint64_t flags);
+void check_pcpfile_actlist(const char *from_file, struct activity *act[], uint64_t flags);
 int read_stats_from_result(pmResult *result, struct file_header *header, int curr);
+void pcp_read_sadc_metrics(char **version, long *interval);
+
+/* sadf->PCP write-path wrappers (no PMI calls in sadf_misc.c) */
+void pcp_write_file_header_metrics(const struct file_header *hdr);
+void pcp_write_sadf_sample(unsigned long long ust_time);
+void pcp_open_sadf_archive(const char *dfile, const struct file_header *hdr);
+void pcp_close_sadf_archive(unsigned long long ust_time);
+void pcp_write_sadf_restart(const struct file_header *hdr, unsigned long long ust_time);
+void pcp_write_sadf_comment(const char *comment, unsigned long long ust_time);
+
+/* sadc direct-write wrappers (no PMI calls in sadc.c) */
+int  pcp_open_sadc_archive(const char *path, const struct file_header *hdr);
+int  pcp_write_sadc_sample(unsigned long long ust_time, uint64_t flags);
+void pcp_close_sadc_archive(void);
 
 #endif /* _PCP_STATS_H */
