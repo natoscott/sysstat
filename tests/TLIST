@@ -658,15 +658,6 @@ NOTES:
 05617	cat ${T_SRCDIR}/tests/05617 | /bin/sh
 05618	cat ${T_SRCDIR}/tests/05618 | /bin/sh
 05619	cat ${T_SRCDIR}/tests/05619 | /bin/sh
-05620	cat ${T_SRCDIR}/tests/05620 | /bin/sh
-05621	cat ${T_SRCDIR}/tests/05621 | /bin/sh
-05622	cat ${T_SRCDIR}/tests/05622 | /bin/sh
-05623	cat ${T_SRCDIR}/tests/05623 | /bin/sh
-05624	cat ${T_SRCDIR}/tests/05624 | /bin/sh
-05625	cat ${T_SRCDIR}/tests/05625 | /bin/sh
-05626	cat ${T_SRCDIR}/tests/05626 | /bin/sh
-05627	cat ${T_SRCDIR}/tests/05627 | /bin/sh
-05628	cat ${T_SRCDIR}/tests/05628 | /bin/sh
 
 =====	Tests to be done at the very end
 08900	cat tests/TLIST | grep ^0 | awk '{print $1}' > tests/out.list1.tmp

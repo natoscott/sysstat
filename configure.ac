@@ -796,6 +796,7 @@ AC_CONFIG_FILES([cron/sysstat.sleep], [chmod +x cron/sysstat.sleep])	# Permissio
 AC_CONFIG_FILES([man/sa1.8:man/sa1.in])		# File must be renamed
 AC_CONFIG_FILES([man/sa2.8:man/sa2.in])		# File must be renamed
 AC_CONFIG_FILES([man/sadc.8:man/sadc.in])	# File must be renamed
+AC_CONFIG_FILES([man/sysstat.pcpconf.5:man/sysstat.pcpconf.in])	# File must be renamed
 AC_CONFIG_FILES([man/sadf.1:man/sadf.in])	# File must be renamed
 AC_CONFIG_FILES([man/sar.1:man/sar.in])		# File must be renamed
 AC_CONFIG_FILES([man/sysstat.5:man/sysstat.in])	# File must be renamed

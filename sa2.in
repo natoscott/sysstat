@@ -14,6 +14,8 @@ SYSCONFIG_FILE=@SYSCONFIG_FILE@
 HISTORY=@HISTORY@
 COMPRESSAFTER=@COMPRESSAFTER@
 ZIP="@ZIP@"
+PCP_HISTORY=${HISTORY}
+PCP_COMPRESSAFTER=1
 UMASK=0022
 ENDIR=@SAR_DIR@
 DELAY_RANGE=@DELAY_RANGE@
@@ -76,5 +78,33 @@ UNCOMPRESSED_SAFILES_REGEX='/sar?[0-9]{2,8}$'
 find "${SA_DIR}" -type f -mtime +${COMPRESSAFTER} \
 	| grep -E "${UNCOMPRESSED_SAFILES_REGEX}" \
 	| xargs -r "${ZIP}" > /dev/null
+
+# PCP archive management (only when PCP directories are present)
+# PCP_HISTORY and PCP_COMPRESSAFTER can be overridden in the sysconfig file.
+[ -r ${SYSCONFIG_DIR}/${SYSCONFIG_FILE} ] && . ${SYSCONFIG_DIR}/${SYSCONFIG_FILE}
+
+PCP_DIR_REGEX='/pcp[0-9]{2,8}$'
+
+# Remove PCP archive directories older than PCP_HISTORY days
+find "${SA_DIR}" -type d -mtime +${PCP_HISTORY} \
+	| grep -E "${PCP_DIR_REGEX}" \
+	| xargs -r rm -rf
+
+# Compress completed PCP data volumes older than PCP_COMPRESSAFTER days.
+# pmlogcompress is preferred (part of pcp package) but may not be installed
+# when only pcp-libs is present; fall back to compressing volumes with ZIP.
+find "${SA_DIR}" -type d -mtime +${PCP_COMPRESSAFTER} \
+	| grep -E "${PCP_DIR_REGEX}" \
+	| while read pcp_dir; do
+		base=$(basename "${pcp_dir}")
+		if command -v pmlogcompress >/dev/null 2>&1; then
+			pmlogcompress "${pcp_dir}/${base}" > /dev/null 2>&1
+		else
+			# Compress data volumes individually; PCP reads .N.xz transparently
+			find "${pcp_dir}" -name "${base}.[0-9]*" \
+				! -name "*.gz" ! -name "*.xz" ! -name "*.zst" \
+				! -name "*.bz2" | xargs -r "${ZIP}" > /dev/null
+		fi
+	done
 
 exit 0

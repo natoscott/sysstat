@@ -1,0 +1,58 @@
+# @PACKAGE_NAME@-@PACKAGE_VERSION@ PCP local metric collection configuration.
+#
+# Read by sadc when writing PCP archives (-O pcp or -O sa+pcp).
+# Changes take effect on the next sadc restart.
+#
+# See sysstat.pcpconf(5) and sadc(8) for details.
+
+[settings]
+# Sampling interval for local-context metrics (seconds).
+# Should be >= the sadc collection interval.  Default: 15 seconds.
+interval = 15
+
+# Maximum PCP archive data volume size before automatic rotation (bytes).
+# Set to 0 to disable in-session rotation.
+# volume_size = 104857600
+
+[pmdas]
+# Additional PMDAs to load via pmSpecLocalPMDA(3).
+# The proc PMDA is always loaded automatically.
+# Uncomment 'linux' to record extended kernel metrics via the PMDA
+# (in addition to those already written by sadc's built-in collectors).
+# linux
+
+[metrics]
+# Metric names to record, one per line.  Non-leaf names (e.g. proc.psinfo)
+# are expanded to all leaves beneath them.  Metrics already collected by
+# sadc's built-in path are silently skipped.
+#
+# The default set below covers the metrics needed by pcp-pidstat(1).
+# See also: /etc/pcp/pmlogconf/tools/pidstat
+#           /etc/pcp/pmlogconf/tools/atop-proc
+proc.nprocs
+proc.psinfo.pid
+proc.psinfo.cmd
+proc.psinfo.utime
+proc.psinfo.stime
+proc.psinfo.guest_time
+proc.psinfo.minflt
+proc.psinfo.maj_flt
+proc.psinfo.vsize
+proc.psinfo.rss
+proc.psinfo.processor
+proc.psinfo.rt_priority
+proc.psinfo.policy
+proc.psinfo.threads
+proc.psinfo.vctxsw
+proc.psinfo.nvctxsw
+proc.psinfo.wchan_s
+proc.psinfo.psargs
+proc.memory.vmstack
+proc.io.rchar
+proc.io.wchar
+proc.io.read_bytes
+proc.io.write_bytes
+proc.id.uid
+proc.id.uid_nm
+proc.fd.count
+proc.schedstat.run_delay

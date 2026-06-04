@@ -1,0 +1,124 @@
+.\" sysstat.pcpconf.5 - Manual page for the sysstat PCP local metric config file
+.TH SYSSTAT.PCPCONF 5 "JUNE 2026" "sysstat-@PACKAGE_VERSION@" "Linux User's Manual" -*- nroff -*-
+.SH NAME
+sysstat.pcpconf \- sysstat PCP local metric collection configuration file
+.SH DESCRIPTION
+The
+.B sysstat.pcpconf
+file configures which additional metrics
+.BR sadc (8)
+records from a local PMDA context when writing PCP archives
+(via
+.B \-O pcp
+or
+.BR "\-O sa+pcp" ).
+It is read once at
+.B sadc
+startup; changes take effect on the next restart.
+.PP
+The default location is
+.IR @SYSCONFIG_DIR@/sysstat.pcpconf .
+The
+.B PCP_CONF
+environment variable overrides this path.
+.SH "FILE FORMAT"
+The file uses a simple INI-style format.  Lines beginning with
+.B #
+are comments.  Blank lines are ignored.
+Section headers are enclosed in square brackets.
+.SS "[settings]"
+Key\-value pairs controlling collection behaviour.
+.TP
+.BI "interval = " N
+Minimum gap in seconds between consecutive local PMDA fetch cycles within
+a single long-running
+.B sadc
+process.  This throttles expensive PMDA calls (such as reading
+.B proc.*
+metrics across thousands of processes) when the main
+.B sadc
+collection interval is very short.
+This setting has no effect when
+.B sadc
+is invoked as a one-shot process (the default systemd and cron
+configuration), because the per-process timestamp tracking resets on
+each fresh invocation.
+Tune this value upward for high-frequency deployments such as
+.BR "sadc 1 3600" .
+Default: 15.
+.TP
+.BI "volume_size = " bytes
+Maximum PCP data volume size in bytes before automatic rotation.
+Set to 0 to disable in-session rotation.  Default: 0.
+.SS "[pmdas]"
+One PMDA name per line.  Each entry is passed to
+.BR pmSpecLocalPMDA (3)
+before opening the local context.  The
+.B proc
+PMDA is always loaded automatically; entries in this section add
+optional extras such as
+.BR linux .
+.SS "[metrics]"
+One metric name per line.  Both leaf metric names
+(e.g.\&
+.IR proc.psinfo.pid )
+and namespace node names
+(e.g.\&
+.IR proc.psinfo )
+are accepted; namespace nodes are expanded to all leaf metrics
+beneath them via
+.BR pmTraversePMNS (3).
+.PP
+Metrics whose PMID is already registered by
+.BR sadc 's
+built-in write path are silently skipped to avoid double-writes.
+Unknown metric names are skipped with a warning on stderr.
+.SH EXAMPLE
+.nf
+[settings]
+interval = 15
+
+[pmdas]
+# linux
+
+[metrics]
+proc.nprocs
+proc.psinfo.pid
+proc.psinfo.cmd
+proc.psinfo.utime
+proc.psinfo.stime
+proc.memory.vmrss
+proc.io.read_bytes
+proc.io.write_bytes
+proc.id.uid_nm
+proc.fd.count
+proc.schedstat.run_delay
+.fi
+.SH "ENVIRONMENT VARIABLES"
+.TP
+.B PCP_CONF
+Overrides the configuration file path.  Useful for testing or
+site-specific deployments.
+.SH FILES
+.I @SYSCONFIG_DIR@/sysstat.pcpconf
+.RS
+Default configuration file location.
+.RE
+.I /etc/pcp/pmlogconf/tools/pidstat
+.br
+.I /var/lib/pcp/config/pmlogconf/tools/atop-proc
+.RS
+PCP-provided metric lists that can be used as a reference for
+populating the
+.B [metrics]
+section.
+.RE
+.SH "SEE ALSO"
+.BR sadc (8),
+.BR sa1 (8),
+.BR sa2 (8),
+.BR pmSpecLocalPMDA (3),
+.BR pmTraversePMNS (3),
+.BR sysstat (5)
+.SH AUTHOR
+Sebastien Godard (sysstat <at> orange.fr)

@@ -41,6 +41,7 @@
 #include <pcp/import.h>
 #include "pcp_stats.h"
 #include "pcp_def_metrics.h"
+#include "pcp_local.h"
 #endif
 
 #ifdef USE_NLS
@@ -74,6 +75,10 @@ uint64_t flags = 0;
 #ifdef HAVE_PMI_APPEND
 /* PCP archive base path (without extension, derived from safile or explicit) */
 char pcp_archive[MAX_FILE_LEN] = "";
+
+/* Local PMDA metric collection configuration (from sysstat.pcpconf) */
+static struct pcp_local_config local_cfg;
+static unsigned long long last_local_ust = 0;
 
 /*
  * Derive the PCP archive base path from the native sa file path, following
@@ -1184,12 +1189,34 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 					continue;
 				(*act[p]->f_pcp_print)(act[p], 0);
 			}
-			{
-				if (pcp_write_sadc_sample(record_hdr.ust_time, record_hdr_ust_nsec, flags) < 0) {
-					if (WRITE_PCP_ONLY(flags))
-						exit(4);
-					flags &= ~S_F_PCP_OUTPUT;
-				}
+
+			/* Local PMDA metrics at their own (slower) interval */
+			if (local_cfg.num_metrics > 0 &&
+			    record_hdr.ust_time - last_local_ust >=
+					(unsigned long long)local_cfg.interval) {
+				/*
+				 * pcp_local_write is not async-signal-safe
+				 * (uses malloc/realloc internally).  Block
+				 * signals for its duration to prevent heap
+				 * corruption if a signal fires mid-allocation.
+				 */
+				sigset_t block_set, old_set;
+				sigemptyset(&block_set);
+				sigaddset(&block_set, SIGTERM);
+				sigaddset(&block_set, SIGINT);
+				sigaddset(&block_set, SIGALRM);
+				sigprocmask(SIG_BLOCK, &block_set, &old_set);
+				pcp_local_write(&local_cfg,
+						record_hdr.ust_time,
+						record_hdr_ust_nsec);
+				sigprocmask(SIG_SETMASK, &old_set, NULL);
+				last_local_ust = record_hdr.ust_time;
+			}
+
+			if (pcp_write_sadc_sample(record_hdr.ust_time, record_hdr_ust_nsec, flags) < 0) {
+				if (WRITE_PCP_ONLY(flags))
+					exit(4);
+				flags &= ~S_F_PCP_OUTPUT;
 			}
 		}
 #endif /* HAVE_PMI_APPEND */
@@ -1303,8 +1330,10 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 	/* Close file descriptors if they have actually been used */
 	CLOSE(stdfd);
 	CLOSE(ofd);
-	if (WRITE_PCP_OUTPUT(flags))
+	if (WRITE_PCP_OUTPUT(flags)) {
 		pcp_close_sadc_archive();
+		pcp_local_free(&local_cfg);
+	}
 }
 
 /*
@@ -1588,6 +1617,19 @@ int main(int argc, char **argv)
 		}
 
 		/*
+		 * Initialise local PMDA context before pmiStart so that
+		 * pmSpecLocalPMDA calls (from sysstat.pcpconf [pmdas]) take
+		 * effect.  Errors here are non-fatal; we just skip local metrics.
+		 * PCP_CONF env var overrides the default config path (for testing).
+		 */
+		{
+			const char *pcpconf = __getenv("PCP_CONF");
+			pcp_local_init(&local_cfg,
+				       pcpconf ? pcpconf
+					       : SYSCONFIG_DIR "/sysstat.pcpconf");
+		}
+
+		/*
 		 * PMI_APPEND falls back silently to creating a new archive
 		 * when the files don't yet exist, so use it unconditionally.
 		 */
@@ -1601,6 +1643,9 @@ int main(int argc, char **argv)
 			flags &= ~S_F_PCP_OUTPUT;
 			goto pcp_init_done;
 		}
+
+		/* Register local metrics into the now-open PMI write context */
+		pcp_local_register(&local_cfg);
 
 		/*
 		 * Set S_F_SINCE_BOOT so that get_global_cpu_statistics() does

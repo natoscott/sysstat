@@ -6036,6 +6036,8 @@ ac_config_files="$ac_config_files man/sa2.8:man/sa2.in"
 		# File must be renamed
 ac_config_files="$ac_config_files man/sadc.8:man/sadc.in"
 	# File must be renamed
+ac_config_files="$ac_config_files man/sysstat.pcpconf.5:man/sysstat.pcpconf.in"
+	# File must be renamed
 ac_config_files="$ac_config_files man/sadf.1:man/sadf.in"
 	# File must be renamed
 ac_config_files="$ac_config_files man/sar.1:man/sar.in"
@@ -6780,6 +6782,7 @@ do
     "man/sa1.8") CONFIG_FILES="$CONFIG_FILES man/sa1.8:man/sa1.in" ;;
     "man/sa2.8") CONFIG_FILES="$CONFIG_FILES man/sa2.8:man/sa2.in" ;;
     "man/sadc.8") CONFIG_FILES="$CONFIG_FILES man/sadc.8:man/sadc.in" ;;
+    "man/sysstat.pcpconf.5") CONFIG_FILES="$CONFIG_FILES man/sysstat.pcpconf.5:man/sysstat.pcpconf.in" ;;
     "man/sadf.1") CONFIG_FILES="$CONFIG_FILES man/sadf.1:man/sadf.in" ;;
     "man/sar.1") CONFIG_FILES="$CONFIG_FILES man/sar.1:man/sar.in" ;;
     "man/sysstat.5") CONFIG_FILES="$CONFIG_FILES man/sysstat.5:man/sysstat.in" ;;

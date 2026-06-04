@@ -163,6 +163,38 @@ metrics identifying the tool and its configuration, plus a
 .B {"sadc":true}
 context label for easy identification via
 .BR pminfo (1).
+.PP
+When PCP archive output is active,
+.B sadc
+also reads
+.I @SYSCONFIG_DIR@/sysstat.pcpconf
+to collect metrics from any installed PCP DSO PMDA via a local PMDA context
+(see
+.BR pmSpecLocalPMDA (3)
+and
+.BR sysstat.pcpconf (5)).
+The default configuration collects per-process metrics (equivalent to
+.BR pidstat (1)),
+CIFS filesystem statistics (equivalent to
+.BR cifsiostat (1)),
+and tape drive statistics (equivalent to
+.BR tapestat (1))
+at a 15-second interval.
+Collection frequency is governed by the
+.B interval
+key in
+.I sysstat.pcpconf
+(default: 15 seconds minimum gap between consecutive fetches within a
+long-running sadc process; see
+.BR sysstat.pcpconf (5)
+for the full semantics).
+All local metrics are stored in the same PCP archive as the system-wide
+metrics and can be replayed using the
+.B \-a
+option of the respective sysstat tool.
+The
+.B PCP_CONF
+environment variable overrides the configuration file path.
 .TP
 .BI "\-S { " "keyword" "[,...] | ALL | XALL }"
 Possible keywords are
@@ -253,6 +285,27 @@ assumes that you are using at least a 2.6 kernel.
 The standard system activity daily data files and their default location.
 .IR "YYYY " "stands for the current year, " "MM " "for the current month and " "DD"
 for the current day.
+.RE
+.I @SA_DIR@/pcpDD/pcpDD
+.br
+.I @SA_DIR@/pcpYYYYMMDD/pcpYYYYMMDD
+.RS
+PCP archive base paths written when
+.B -O pcp
+or
+.B -O sa+pcp
+is active.  Each archive consists of
+.IR pcpDD .meta ", " pcpDD .index " and one or more " pcpDD .N
+data volumes.
+.RE
+.I @SYSCONFIG_DIR@/sysstat.pcpconf
+.RS
+Local PMDA metric configuration for PCP archive output.
+Specifies the sampling interval, optional additional PMDAs to load,
+and the list of metric names to record alongside the standard
+.B sadc
+statistics.  See
+.BR sysstat.pcpconf (5).
 .RE
 .IR "/proc " "and " "/sys " "contain various files with system statistics."
 
