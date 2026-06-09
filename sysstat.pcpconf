@@ -31,6 +31,8 @@ interval = 15
 [pmdas]
 # Additional PMDAs to load via pmSpecLocalPMDA(3).
 # The proc PMDA is always loaded automatically.
+# The CIFS PMDA provides per-filesystem SMB/CIFS statistics for cifsiostat -a.
+cifs
 # Uncomment 'linux' to record extended kernel metrics via the PMDA
 # (in addition to those already written by sadc's built-in collectors).
 # linux
@@ -117,3 +119,13 @@ tape.dev.write_ns
 tape.dev.other_cnt
 tape.dev.resid_cnt
 tape.dev.io_ns
+
+# CIFS/SMB filesystem statistics (-a option for cifsiostat)
+# Requires the CIFS PMDA loaded via [pmdas] above
+cifs.fs.read
+cifs.fs.read_bytes
+cifs.fs.write
+cifs.fs.write_bytes
+cifs.ops.open
+cifs.ops.close
+cifs.ops.delete
