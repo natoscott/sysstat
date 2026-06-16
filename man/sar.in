@@ -300,6 +300,25 @@ Total number of file nodes used in filesystem.
 Percentage of file nodes used in filesystem.
 .RE
 .TP
+.BI "\-a " "archive"
+Read statistics from a PCP (Performance Co-Pilot) archive explicitly,
+following the PCP convention used by
+.BR pmval (1)
+and
+.BR pmie (1).
+Unlike
+.BR \-f ,
+.B \-a
+skips native sa format detection and reports an error if the path is
+not a valid PCP archive.
+The
+.I archive
+argument may be an archive base path or a directory named
+.BI "pcpDD/"
+containing an archive of the same base name.
+Requires PCP support
+.RB ( HAVE_PCP ).
+.TP
 .BI "\-f [ " "filename " "]"
 .RI "Extract records from " "filename " "(created by the"
 .BI "\-o " "filename"

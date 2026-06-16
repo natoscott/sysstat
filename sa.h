@@ -118,6 +118,7 @@ enum {
 #define S_F_DEBUG_MODE		0x80000000
 #define S_F_PCP_OUTPUT		0x100000000ULL	/* Only used by sadc */
 #define S_F_PCP_ONLY		0x200000000ULL	/* Only used by sadc */
+#define S_F_PCP_INPUT		0x400000000ULL	/* sar -a: read PCP archive explicitly */
 
 #define WANT_SINCE_BOOT(m)		(((m) & S_F_SINCE_BOOT)   == S_F_SINCE_BOOT)
 #define WANT_SA_ROTAT(m)		(((m) & S_F_SA_ROTAT)     == S_F_SA_ROTAT)

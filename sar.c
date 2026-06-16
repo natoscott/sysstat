@@ -146,7 +146,8 @@ void usage(char *progname)
 			  "[ --int=<int_list> ]\n"
 			  "[ --dec={ 0 | 1 | 2 } ] [ --help ] [ --human ] [ --pretty ] [ --sadc ]\n"
 			  "[ -j { SID | ID | LABEL | PATH | UUID | ... } ]\n"
-			  "[ -f [ <filename> ] | -o [ <filename> ] | -[0-9]+ ]\n"
+			  "[ -a <archive> ]\n"
+		  "[ -f [ <filename> ] | -o [ <filename> ] | -[0-9]+ ]\n"
 			  "[ -i <interval> ] [ -s [ <start_time> ] ] [ -e [ <end_time> ] ]\n"));
 	exit(1);
 }
@@ -1714,6 +1715,17 @@ void read_stats_from_file(char from_file[])
 		pmDestroyContext(ctx);
 		return;
 	}
+
+	/*
+	 * If the user explicitly requested a PCP archive via -a, do not
+	 * silently fall back to native file parsing — report the failure.
+	 */
+	if (flags & S_F_PCP_INPUT) {
+		fprintf(stderr,
+			_("Cannot open PCP archive %s: %s\n"),
+			archive_path, pmErrStr(ctx));
+		exit(1);
+	}
 #endif
 
 	read_stats_from_rawfile(from_file);
@@ -1971,6 +1983,16 @@ int main(int argc, char **argv)
 			else {
 				strcpy(to_file, "-");
 			}
+		}
+
+		else if (!strcmp(argv[opt], "-a")) {
+			/* Explicitly read from a PCP archive (pmval/pmie convention) */
+			if (from_file[0] || day_offset)
+				usage(argv[0]);
+			if (!argv[++opt] || !strncmp(argv[opt], "-", 1))
+				usage(argv[0]);
+			snprintf(from_file, sizeof(from_file), "%s", argv[opt++]);
+			flags |= S_F_PCP_INPUT;
 		}
 
 		else if (!strcmp(argv[opt], "-f")) {
