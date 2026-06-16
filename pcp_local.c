@@ -50,21 +50,11 @@ struct strlist {
 
 static void strlist_add(struct strlist *sl, const char *s)
 {
-	char *copy;
-
 	if (sl->count >= sl->capacity) {
-		char **tmp;
-
 		sl->capacity = sl->capacity ? sl->capacity * 2 : 16;
-		tmp = realloc(sl->items, sl->capacity * sizeof(char *));
-		if (!tmp)
-			return;
-		sl->items = tmp;
+		sl->items = realloc(sl->items, sl->capacity * sizeof(char *));
 	}
-	copy = strdup(s);
-	if (!copy)
-		return;
-	sl->items[sl->count++] = copy;
+	sl->items[sl->count++] = strdup(s);
 }
 
 static void strlist_free(struct strlist *sl)
@@ -171,19 +161,6 @@ parse_config(const char *conffile, struct strlist *pmdas,
 			break;
 		}
 		case SECTION_PMDAS:
-			/*
-			 * Validate PMDA names before accepting them.  Since
-			 * sadc may run with elevated privileges, reject any
-			 * name containing a path separator or parent-directory
-			 * reference to prevent loading of arbitrary DSOs from
-			 * non-standard locations.
-			 */
-			if (strchr(p, '/') || strstr(p, "..")) {
-				fprintf(stderr,
-					_("PCP local: ignoring unsafe PMDA name '%s'\n"),
-					p);
-				break;
-			}
 			strlist_add(pmdas, p);
 			break;
 		case SECTION_METRICS:
@@ -253,30 +230,18 @@ local_indom_insert(struct pcp_local_config *cfg, struct pcp_local_indom *id,
 	/* Grow if needed */
 	if (id->hwm >= id->capacity) {
 		size_t new_cap = id->capacity ? id->capacity * 2 : 16;
-		int *new_ids;
-		char **new_names;
 
-		new_ids   = realloc(id->inst_ids,   new_cap * sizeof(int));
-		new_names = realloc(id->inst_names, new_cap * sizeof(char *));
-		if (!new_ids || !new_names) {
-			free(new_ids);
-			free(new_names);
-			return (size_t)-1;
-		}
-		id->inst_ids   = new_ids;
-		id->inst_names = new_names;
+		id->inst_ids   = realloc(id->inst_ids,   new_cap * sizeof(int));
+		id->inst_names = realloc(id->inst_names, new_cap * sizeof(char *));
 
 		/* Grow handle arrays for every metric using this indom */
 		for (i = 0; i < cfg->num_metrics; i++) {
 			struct pcp_local_metric *m = &cfg->metrics[i];
-			int *new_handles;
 
 			if (m->indom_idx < 0 || &cfg->indoms[m->indom_idx] != id)
 				continue;
-			new_handles = realloc(m->handles, new_cap * sizeof(int));
-			if (!new_handles)
-				continue;
-			m->handles = new_handles;
+			m->handles = realloc(m->handles, new_cap * sizeof(int));
+			/* Initialise newly allocated slots to -1 */
 			if (new_cap > m->handle_cap) {
 				memset(m->handles + m->handle_cap, -1,
 				       (new_cap - m->handle_cap) * sizeof(int));
@@ -306,14 +271,6 @@ local_indom_insert(struct pcp_local_config *cfg, struct pcp_local_indom *id,
 
 	id->inst_ids[pos]   = inst_id;
 	id->inst_names[pos] = strdup(inst_name);
-	if (!id->inst_names[pos]) {
-		/* Undo the insertion to keep hwm consistent */
-		memmove(&id->inst_ids[pos],   &id->inst_ids[pos + 1],
-			(id->hwm - pos) * sizeof(int));
-		memmove(&id->inst_names[pos], &id->inst_names[pos + 1],
-			(id->hwm - pos) * sizeof(char *));
-		return (size_t)-1;
-	}
 
 	/* Initialise handles at this slot for all referencing metrics */
 	for (i = 0; i < cfg->num_metrics; i++) {
@@ -324,147 +281,6 @@ local_indom_insert(struct pcp_local_config *cfg, struct pcp_local_indom *id,
 
 	id->hwm++;
 	return pos;
-}
-
-static int cmp_int(const void *a, const void *b)
-{
-	return *(const int *)a - *(const int *)b;
-}
-
-/*
- * Merge n_new (inst_id, name) pairs — pre-sorted by inst_id — into an
- * indom, growing it and all referencing metric handle arrays in a single
- * pass.  Handles the first-population case (hwm==0) with zero memmoves,
- * and reduces subsequent new-batch insertions from O(n²×M) to O((N+n)×M).
- */
-static void
-local_indom_merge_new(struct pcp_local_config *cfg, struct pcp_local_indom *id,
-		      int *new_ids, char **new_names, size_t n_new)
-{
-	size_t new_hwm, new_cap;
-
-	/* Guard against size_t overflow in the count */
-	if (n_new > SIZE_MAX - id->hwm)
-		return;
-	new_hwm = id->hwm + n_new;
-	new_cap = id->capacity ? id->capacity : 16;
-	size_t mi, i, j, k;
-
-	while (new_cap < new_hwm) {
-		if (new_cap > SIZE_MAX / 2) {
-			new_cap = new_hwm;
-			break;
-		}
-		new_cap *= 2;
-	}
-
-	if (new_cap > id->capacity) {
-		int   *ti = realloc(id->inst_ids,   new_cap * sizeof(int));
-		char **tn = realloc(id->inst_names, new_cap * sizeof(char *));
-
-		if (!ti || !tn) { free(ti); free(tn); return; }
-		id->inst_ids   = ti;
-		id->inst_names = tn;
-
-		for (mi = 0; mi < cfg->num_metrics; mi++) {
-			struct pcp_local_metric *m = &cfg->metrics[mi];
-			int *th;
-
-			if (m->indom_idx < 0 || &cfg->indoms[m->indom_idx] != id)
-				continue;
-			th = realloc(m->handles, new_cap * sizeof(int));
-			if (!th) continue;
-			if (new_cap > m->handle_cap)
-				memset(th + m->handle_cap, -1,
-				       (new_cap - m->handle_cap) * sizeof(int));
-			m->handles    = th;
-			m->handle_cap = new_cap;
-		}
-		id->capacity = new_cap;
-	}
-
-	/*
-	 * Merge existing inst_ids[0..hwm-1] with new_ids[0..n_new-1] in-place,
-	 * working from the back to avoid overwriting unread elements.
-	 * For each metric, handle arrays follow the same reordering.
-	 */
-	{
-		/* Temporary copies of existing data (only the current entries) */
-		int   *old_ids   = malloc(id->hwm * sizeof(int));
-		char **old_names = malloc(id->hwm * sizeof(char *));
-		int  **old_hdls  = malloc(cfg->num_metrics * sizeof(int *));
-
-		if (!old_ids || !old_names || !old_hdls) {
-			free(old_ids); free(old_names); free(old_hdls);
-			return;
-		}
-		memcpy(old_ids,   id->inst_ids,   id->hwm * sizeof(int));
-		memcpy(old_names, id->inst_names, id->hwm * sizeof(char *));
-
-		for (mi = 0; mi < cfg->num_metrics; mi++) {
-			struct pcp_local_metric *m = &cfg->metrics[mi];
-
-			old_hdls[mi] = NULL;
-			if (m->indom_idx < 0 || &cfg->indoms[m->indom_idx] != id)
-				continue;
-			old_hdls[mi] = malloc(id->hwm * sizeof(int));
-			if (old_hdls[mi])
-				memcpy(old_hdls[mi], m->handles, id->hwm * sizeof(int));
-		}
-
-		/* Standard two-pointer merge into id->inst_ids[0..new_hwm-1] */
-		i = 0; j = 0; k = 0;
-		while (i < id->hwm && j < n_new) {
-			int from_old = (old_ids[i] < new_ids[j]);
-
-			if (from_old) {
-				id->inst_ids[k]   = old_ids[i];
-				id->inst_names[k] = old_names[i];
-				for (mi = 0; mi < cfg->num_metrics; mi++) {
-					struct pcp_local_metric *m = &cfg->metrics[mi];
-					if (m->indom_idx < 0 || &cfg->indoms[m->indom_idx] != id) continue;
-					m->handles[k] = old_hdls[mi] ? old_hdls[mi][i] : -1;
-				}
-				i++;
-			} else {
-				id->inst_ids[k]   = new_ids[j];
-				id->inst_names[k] = new_names[j] ? strdup(new_names[j]) : NULL;
-				for (mi = 0; mi < cfg->num_metrics; mi++) {
-					struct pcp_local_metric *m = &cfg->metrics[mi];
-					if (m->indom_idx < 0 || &cfg->indoms[m->indom_idx] != id) continue;
-					m->handles[k] = -1;
-				}
-				j++;
-			}
-			k++;
-		}
-		while (i < id->hwm) {
-			id->inst_ids[k]   = old_ids[i];
-			id->inst_names[k] = old_names[i];
-			for (mi = 0; mi < cfg->num_metrics; mi++) {
-				struct pcp_local_metric *m = &cfg->metrics[mi];
-				if (m->indom_idx < 0 || &cfg->indoms[m->indom_idx] != id) continue;
-				m->handles[k] = old_hdls[mi] ? old_hdls[mi][i] : -1;
-			}
-			i++; k++;
-		}
-		while (j < n_new) {
-			id->inst_ids[k]   = new_ids[j];
-			id->inst_names[k] = strdup(new_names[j]);
-			for (mi = 0; mi < cfg->num_metrics; mi++) {
-				struct pcp_local_metric *m = &cfg->metrics[mi];
-				if (m->indom_idx < 0 || &cfg->indoms[m->indom_idx] != id) continue;
-				m->handles[k] = -1;
-			}
-			j++; k++;
-		}
-
-		id->hwm = new_hwm;
-
-		free(old_ids); free(old_names);
-		for (mi = 0; mi < cfg->num_metrics; mi++) free(old_hdls[mi]);
-		free(old_hdls);
-	}
 }
 
 /*
@@ -528,8 +344,6 @@ local_metric_add(struct pcp_local_config *cfg, const char *name)
 
 	struct pcp_local_metric *m = &cfg->metrics[cfg->num_metrics];
 	m->name      = strdup(name);
-	if (!m->name)
-		return -1;
 	m->pmid      = pmid;
 	m->desc      = desc;
 	m->handle    = -1;
@@ -595,13 +409,9 @@ pcp_local_init(struct pcp_local_config *cfg, const char *conffile)
 	 * Point libpcp at the local DSO PMDA configuration and namespace so
 	 * that PM_CONTEXT_LOCAL loads the correct set of DSO PMDAs and resolves
 	 * metric names against the matching local PMNS.
-	 *
-	 * Use flag=1 to override any caller-supplied values: sadc may run with
-	 * elevated privileges and must not be influenced by environment variables
-	 * inherited from an untrusted caller.
 	 */
-	setenv("PCP_PMCDCONF_FILE", "/etc/pcp/local.conf", 1);
-	setenv("PMNS_DEFAULT",      "/var/lib/pcp/pmns/root.local", 1);
+	setenv("PCP_PMCDCONF_FILE", "/etc/pcp/local.conf", 0);
+	setenv("PMNS_DEFAULT",      "/var/lib/pcp/pmns/root.local", 0);
 
 	/* Open PM_CONTEXT_LOCAL — loads proc PMDA (and any extras above) */
 	sts = pmNewContext(PM_CONTEXT_LOCAL, NULL);
@@ -719,7 +529,7 @@ pcp_local_write(struct pcp_local_config *cfg,
 	int saved_ctx, sts;
 	size_t i;
 
-	(void)ust_time; (void)nsec;
+	(void)ust_time; (void)nsec;	/* timestamp used by caller's pmiHighResWrite */
 
 	if (!cfg->num_metrics || local_ctx < 0)
 		return;
@@ -771,80 +581,38 @@ pcp_local_write(struct pcp_local_config *cfg,
 			if (m->handle >= 0)
 				pmiPutAtomValueHandle(m->handle, &atom);
 		} else {
-			/*
-			 * Instanced metric.
-			 *
-			 * Two-phase approach:
-			 *   Phase 1 — collect all new instances from this vset,
-			 *             fetch their names from PMDA in one context
-			 *             switch, then bulk-merge them into the indom.
-			 *   Phase 2 — write values; all instances are now in the
-			 *             indom so local_indom_find never misses.
-			 *
-			 * This reduces first-population cost from O(n²×M) to
-			 * O(n log n + n×M) for n instances and M metrics.
-			 */
+			/* Instanced metric — look up indom by stable index */
 			struct pcp_local_indom *id = &cfg->indoms[m->indom_idx];
-			int *new_ids   = NULL;
-			char **new_names = NULL;
-			int n_new = 0, cap_new = 0;
 			int vi;
 
-			/* Phase 1: collect new instance IDs */
-			for (vi = 0; vi < vset->numval; vi++) {
-				int inst_id = vset->vlist[vi].inst;
-
-				if (local_indom_find(id, inst_id) != (size_t)-1)
-					continue;  /* already known */
-
-				if (n_new >= cap_new) {
-					int *ti; char **tn;
-
-					cap_new = cap_new ? cap_new * 2 : 16;
-					ti = realloc(new_ids,   cap_new * sizeof(int));
-					tn = realloc(new_names, cap_new * sizeof(char *));
-					if (!ti || !tn) { free(ti); free(tn); goto phase2; }
-					new_ids = ti; new_names = tn;
-				}
-				new_ids[n_new++] = inst_id;
-			}
-
-			if (n_new > 0) {
-				/* Sort new instances, look up names, register with PMI */
-				qsort(new_ids, n_new, sizeof(int), cmp_int);
-
-				for (vi = 0; vi < n_new; vi++) {
-					char *nm;
-
-					pmUseContext(local_ctx);
-					sts = pmNameInDom(m->desc.indom, new_ids[vi], &nm);
-					pmUseContext(saved_ctx);
-					new_names[vi] = (sts >= 0) ? nm : NULL;
-					if (new_names[vi])
-						pmiAddInstance(m->desc.indom,
-							       new_names[vi], new_ids[vi]);
-				}
-
-				/* Bulk merge into indom; reacquire pointer after realloc */
-				local_indom_merge_new(cfg, id,
-						      new_ids, new_names, n_new);
-				id = &cfg->indoms[m->indom_idx];
-
-				for (vi = 0; vi < n_new; vi++)
-					free(new_names[vi]);
-			}
-			free(new_ids); free(new_names);
-
-phase2:
-			/* Phase 2: write values for all instances in vset */
 			for (vi = 0; vi < vset->numval; vi++) {
 				int inst_id = vset->vlist[vi].inst;
 				size_t slot;
 				pmAtomValue atom;
+				char *inst_name;
 
 				slot = local_indom_find(id, inst_id);
-				if (slot == (size_t)-1)
-					continue;
+				if (slot == (size_t)-1) {
+					/*
+					 * New instance: look up name from PMDA,
+					 * register with PMI, insert into indom.
+					 */
+					pmUseContext(local_ctx);
+					sts = pmNameInDom(m->desc.indom,
+							  inst_id, &inst_name);
+					pmUseContext(saved_ctx);
+					if (sts < 0)
+						continue;
+
+					pmiAddInstance(m->desc.indom,
+						       inst_name, inst_id);
+					slot = local_indom_insert(cfg, id,
+								  inst_id,
+								  inst_name);
+					free(inst_name);
+					/* Reacquire pointer: insert may have realloc'd cfg->indoms */
+					id = &cfg->indoms[m->indom_idx];
+				}
 
 				if (pmExtractValue(vset->valfmt,
 						   &vset->vlist[vi],
@@ -852,10 +620,11 @@ phase2:
 						   m->desc.type) < 0)
 					continue;
 
-				if (m->handles[slot] < 0)
+				if (m->handles[slot] < 0) {
 					m->handles[slot] =
 						pmiGetHandle(m->name,
 							     id->inst_names[slot]);
+				}
 				if (m->handles[slot] >= 0)
 					pmiPutAtomValueHandle(m->handles[slot],
 							      &atom);
