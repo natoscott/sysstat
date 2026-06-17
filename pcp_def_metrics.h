@@ -47,11 +47,13 @@ struct act_metrics {
 	((((domain)&0x1ff)<<22)|(((cluster)&0xfff)<<10)|((item)&0x3ff))
 #define PMI_INDOM(domain, serial)	\
 	((((domain)&0x1ff)<<22)|(((serial)&0x3fffff)))
-#ifdef HAVE_BITFIELDS_LTOR /* from PCP header */
-#define PMI_UNITS(a,b,c,d,e,f) {a,b,c,d,e,f,0}
-#else
-#define PMI_UNITS(a,b,c,d,e,f) {0,f,e,d,c,b,a}
-#endif
+/* Use designated initializers — correct regardless of bit-field layout.
+ * extraUnit/extraScale (new PCP fields for temperature, voltage, power)
+ * are left zero; set them explicitly when pmiUnitsEx() is available. */
+#define PMI_UNITS(dimspace, dimtime, dimcount, scalespace, scaletime, scalecount) \
+    ((pmUnits){ .dimSpace   = (dimspace),  .dimTime    = (dimtime),   \
+                .dimCount   = (dimcount),  .scaleSpace = (scalespace), \
+                .scaleTime  = (scaletime), .scaleCount = (scalecount) })
 
 /*
  ***************************************************************************
