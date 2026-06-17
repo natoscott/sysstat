@@ -193,13 +193,19 @@ time_t get_time(struct tm *rectime, int d_off)
  */
 time_t get_xtime_nsec(struct tm *rectime, int d_off, int utc, long *nsec)
 {
-	struct timespec ts;
 	time_t timer;
+#ifdef TEST
+	/* In test mode use the fixed __unix_time so timestamps are reproducible */
+	timer = __time(NULL) - (time_t) SEC_PER_DAY * d_off;
+	*nsec = 0;
+#else
+	struct timespec ts;
 
 	if (clock_gettime(CLOCK_REALTIME, &ts) < 0)
 		return (time_t) -1;
 	timer = ts.tv_sec - (time_t) SEC_PER_DAY * d_off;
 	*nsec = ts.tv_nsec;
+#endif
 
 	if (utc) {
 		if (gmtime_r(&timer, rectime) == NULL)
