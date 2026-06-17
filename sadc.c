@@ -1727,6 +1727,31 @@ int main(int argc, char **argv)
 			reallocate_buffers(act[p], act[p]->nr_ini, flags);
 		}
 
+		/*
+		 * Probe read: discover live device/interface names so that
+		 * per-device PCP instances (disk.dev.*, network.interface.*)
+		 * can be registered before the metric definition loop below.
+		 * In the sadc direct-write path item_list is otherwise NULL
+		 * (no command-line device filter), so no instances would be
+		 * created and all per-device data would be silently dropped.
+		 */
+		read_stats();
+		for (p = 0; p < NR_ACT; p++) {
+			if (!IS_COLLECTED(act[p]->options))
+				continue;
+			switch (act[p]->id) {
+			case A_DISK:
+				pcp_probe_disk_instances(act[p]);
+				break;
+			case A_NET_DEV:
+			case A_NET_EDEV:
+				pcp_probe_net_dev_instances(act[p]);
+				break;
+			default:
+				break;
+			}
+		}
+
 		/* Register metrics for all collected activities */
 		for (p = 0; p < NR_ACT; p++) {
 			if (!IS_COLLECTED(act[p]->options))
@@ -1877,10 +1902,20 @@ pcp_init_done:	;
 			CLOSE(ofd);
 		}
 
-		if (WRITE_PCP_OUTPUT(flags))
+#ifdef HAVE_PMI_APPEND
+		if (WRITE_PCP_OUTPUT(flags)) {
+			struct tm pcp_rectime = {0};
+			long pcp_nsec;
+
+			/* Get sub-second timestamp for PCP (write_special_record only uses second precision) */
+			record_hdr.ust_time = (unsigned long long)
+				get_time_nsec(&pcp_rectime, 0, &pcp_nsec);
 			pcp_write_sadc_special_record(comment,
 						      file_hdr.sa_cpu_nr,
-						      record_hdr.ust_time);
+						      record_hdr.ust_time,
+						      pcp_nsec);
+		}
+#endif
 
 		/* Free structures */
 		sa_sys_free();

@@ -5698,7 +5698,7 @@ pcp_write_sadc_header(long interval_secs)
  */
 void
 pcp_write_sadc_special_record(const char *comment, unsigned int cpu_nr,
-			      unsigned long long timestamp)
+			      unsigned long long timestamp, long nsec)
 {
 	if (comment[0]) {
 		/* Comment: annotation only, no discontinuity mark */
@@ -5727,7 +5727,7 @@ pcp_write_sadc_special_record(const char *comment, unsigned int cpu_nr,
 		pmiPutAtomValueHandle(ACT_HANDLE(&sadc_metrics, SADC_ACTIVITIES, 0), &atom);
 	}
 
-	pmiHighResWrite((int64_t) timestamp, 0);
+	pmiHighResWrite((int64_t) timestamp, (int32_t) nsec);
 	pmiEnd();
 }
 
