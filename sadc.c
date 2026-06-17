@@ -134,6 +134,33 @@ extern unsigned int rec_types_nr[];
 extern struct activity *act[];
 extern __nr_t (*f_count[]) (struct activity *);
 
+#ifdef HAVE_PMI_APPEND
+/*
+ * save/restore AO_COLLECTED across open_ofile() calls.
+ *
+ * open_ofile() constrains AO_COLLECTED to activities already in the native sa
+ * file.  The PCP archive collects independently; saving the user's full
+ * selection before each open_ofile() and restoring afterwards lets the PCP
+ * write path see all requested activities.  write_stats() is guarded by
+ * id_seq[] and will not write extra activities to the native format.
+ */
+static uint32_t pcp_saved_act_options[NR_ACT];
+
+static void pcp_save_act_options(void)
+{
+	int i;
+	for (i = 0; i < NR_ACT; i++)
+		pcp_saved_act_options[i] = act[i]->options & AO_COLLECTED;
+}
+
+static void pcp_restore_act_options(void)
+{
+	int i;
+	for (i = 0; i < NR_ACT; i++)
+		act[i]->options |= pcp_saved_act_options[i];
+}
+#endif /* HAVE_PMI_APPEND */
+
 struct sigaction alrm_act, int_act;
 int sigint_caught = 0;
 
@@ -1241,6 +1268,12 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 			/* Recalculate number of system items and reallocate structures */
 			sa_sys_init();
 
+#ifdef HAVE_PMI_APPEND
+			/* Re-save before open_ofile() narrows AO_COLLECTED again */
+			if (WRITE_PCP_OUTPUT(flags))
+				pcp_save_act_options();
+#endif
+
 			/*
 			 * Open and init new file.
 			 * This is also used to set activity sequence to that of the file
@@ -1265,10 +1298,15 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 			if (WRITE_PCP_OUTPUT(flags)) {
 				int p;
 
+				/* Restore full activity set before writing to new archive */
+				pcp_restore_act_options();
+
 				pcp_close_sadc_archive();
 				set_pcp_default_archive(ofile, pcp_archive,
 							sizeof(pcp_archive));
 				pcp_open_sadc_archive(pcp_archive, &file_hdr);
+				pcp_write_file_header_metrics(&file_hdr);
+				pcp_write_sadc_header(interval);
 				for (p = 0; p < NR_ACT; p++) {
 					if (!IS_COLLECTED(act[p]->options) ||
 					    !act[p]->f_pcp_print)
@@ -1554,6 +1592,15 @@ int main(int argc, char **argv)
 	/* Init structures according to machine architecture */
 	sa_sys_init();
 
+#ifdef HAVE_PMI_APPEND
+	/*
+	 * Save the user's full activity selection now, before open_ofile()
+	 * below restricts AO_COLLECTED to activities already in the file.
+	 */
+	if (WRITE_PCP_OUTPUT(flags))
+		pcp_save_act_options();
+#endif
+
 	/* At least one activity must be collected */
 	if (!get_activity_nr(act, AO_COLLECTED, COUNT_ACTIVITIES)) {
 		/* Requested activities not available: Exit */
@@ -1584,6 +1631,15 @@ int main(int argc, char **argv)
 #ifdef HAVE_PMI_APPEND
 	if (WRITE_PCP_OUTPUT(flags)) {
 		int	p, sts;
+
+		/*
+		 * Restore the full user-requested activity set: open_ofile()
+		 * above cleared AO_COLLECTED for activities absent from the
+		 * existing native sa file.  The PCP archive collects
+		 * independently; write_stats() is guarded by id_seq[] and will
+		 * not write extra activities to the native format.
+		 */
+		pcp_restore_act_options();
 
 		/*
 		 * Allocate and select-all bitmaps so that pcp_print_*_stats()
