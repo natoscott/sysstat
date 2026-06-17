@@ -45,7 +45,6 @@ struct pcp_local_metric {
  * Parsed sysstat.pcpconf configuration.
  */
 struct pcp_local_config {
-	long			 interval;	/* local sampling interval (secs) */
 	size_t			 volume_size;	/* data volume rotation size (bytes) */
 	size_t			 num_metrics;
 	struct pcp_local_metric	*metrics;

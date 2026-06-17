@@ -15,17 +15,8 @@
 # See sysstat.pcpconf(5) and sadc(8) for details.
 
 [settings]
-# Minimum gap in seconds between consecutive local PMDA fetch cycles within
-# a single long-running sadc process.  Prevents expensive PMDA calls (e.g.
-# proc.* across thousands of processes) from firing on every short main
-# collection cycle.  Has no effect when sadc is invoked as a one-shot
-# process (the default systemd/cron configuration), since last_local_ust
-# resets to zero on each fresh invocation.  Tune upward for high-frequency
-# sadc deployments (e.g. sadc 1 3600).  Default: 15 seconds.
-interval = 15
-
 # Maximum PCP archive data volume size before automatic rotation (bytes).
-# Set to 0 to disable in-session rotation.
+# Set to 0 to disable in-session rotation (the default).
 # volume_size = 104857600
 
 [pmdas]

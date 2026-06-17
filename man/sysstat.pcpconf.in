@@ -29,24 +29,6 @@ Section headers are enclosed in square brackets.
 .SS "[settings]"
 Key\-value pairs controlling collection behaviour.
 .TP
-.BI "interval = " N
-Minimum gap in seconds between consecutive local PMDA fetch cycles within
-a single long-running
-.B sadc
-process.  This throttles expensive PMDA calls (such as reading
-.B proc.*
-metrics across thousands of processes) when the main
-.B sadc
-collection interval is very short.
-This setting has no effect when
-.B sadc
-is invoked as a one-shot process (the default systemd and cron
-configuration), because the per-process timestamp tracking resets on
-each fresh invocation.
-Tune this value upward for high-frequency deployments such as
-.BR "sadc 1 3600" .
-Default: 15.
-.TP
 .BI "volume_size = " bytes
 Maximum PCP data volume size in bytes before automatic rotation.
 Set to 0 to disable in-session rotation.  Default: 0.

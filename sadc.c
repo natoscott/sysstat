@@ -78,7 +78,6 @@ char pcp_archive[MAX_FILE_LEN] = "";
 
 /* Local PMDA metric collection configuration (from sysstat.pcpconf) */
 static struct pcp_local_config local_cfg;
-static unsigned long long last_local_ust = 0;
 
 /*
  * Derive the PCP archive base path from the native sa file path, following
@@ -1190,10 +1189,8 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 				(*act[p]->f_pcp_print)(act[p], 0);
 			}
 
-			/* Local PMDA metrics at their own (slower) interval */
-			if (local_cfg.num_metrics > 0 &&
-			    record_hdr.ust_time - last_local_ust >=
-					(unsigned long long)local_cfg.interval) {
+			/* Local PMDA metrics collected on every sample */
+			if (local_cfg.num_metrics > 0) {
 				/*
 				 * pcp_local_write is not async-signal-safe
 				 * (uses malloc/realloc internally).  Block
@@ -1210,7 +1207,6 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 						record_hdr.ust_time,
 						record_hdr_ust_nsec);
 				sigprocmask(SIG_SETMASK, &old_set, NULL);
-				last_local_ust = record_hdr.ust_time;
 			}
 
 			if (pcp_write_sadc_sample(record_hdr.ust_time, record_hdr_ust_nsec, flags) < 0) {

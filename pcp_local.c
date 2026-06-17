@@ -111,13 +111,12 @@ static char *strip(char *s)
  */
 static int
 parse_config(const char *conffile, struct strlist *pmdas,
-	     struct strlist *raw_metrics, long *interval, size_t *volume_size)
+	     struct strlist *raw_metrics, size_t *volume_size)
 {
 	FILE *fp;
 	char line[1024];
 	int section = SECTION_NONE;
 
-	*interval = 0;
 	*volume_size = 0;
 
 	if ((fp = fopen(conffile, "r")) == NULL)
@@ -154,9 +153,7 @@ parse_config(const char *conffile, struct strlist *pmdas,
 			*eq = '\0';
 			char *key = strip(p);
 			char *val = strip(eq + 1);
-			if (!strcmp(key, "interval"))
-				*interval = atol(val);
-			else if (!strcmp(key, "volume_size"))
+			if (!strcmp(key, "volume_size"))
 				*volume_size = (size_t)strtoull(val, NULL, 10);
 			break;
 		}
@@ -379,21 +376,18 @@ int
 pcp_local_init(struct pcp_local_config *cfg, const char *conffile)
 {
 	struct strlist pmdas = {0}, raw_metrics = {0};
-	long interval;
 	size_t volume_size;
 	size_t i;
 	int sts;
 
 	memset(cfg, 0, sizeof(*cfg));
 
-	if (parse_config(conffile, &pmdas, &raw_metrics, &interval,
-			 &volume_size) < 0) {
+	if (parse_config(conffile, &pmdas, &raw_metrics, &volume_size) < 0) {
 		strlist_free(&pmdas);
 		strlist_free(&raw_metrics);
 		return -1;
 	}
 
-	cfg->interval    = interval > 0 ? interval : 15;
 	cfg->volume_size = volume_size;
 
 	/* Load additional PMDAs before opening the local context */
