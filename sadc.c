@@ -1647,6 +1647,9 @@ int main(int argc, char **argv)
 		/* Register local metrics into the now-open PMI write context */
 		pcp_local_register(&local_cfg);
 
+		/* Enable automatic data volume rotation if configured */
+		pcp_sadc_set_volume_size(local_cfg.volume_size);
+
 		/*
 		 * Set S_F_SINCE_BOOT so that get_global_cpu_statistics() does
 		 * not mark per-CPU data as "offline" simply because the previous

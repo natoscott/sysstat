@@ -131,6 +131,7 @@ void pcp_write_sadf_comment(const char *comment, unsigned long long ust_time);
 int  pcp_open_sadc_archive(const char *path, const struct file_header *hdr);
 int  pcp_write_sadc_sample(unsigned long long ust_time, long nsec,
 			   uint64_t flags);
+void pcp_sadc_set_volume_size(size_t volume_size);
 void pcp_close_sadc_archive(void);
 #else
 /* Stub out the sadc PCP write path so sadc.c needs no #ifdef */
@@ -141,6 +142,7 @@ static inline int  pcp_write_sadc_sample(unsigned long long t __attribute__((unu
 					 long n __attribute__((unused)),
 					 uint64_t f __attribute__((unused)))
 	{ return 0; }
+static inline void pcp_sadc_set_volume_size(size_t s __attribute__((unused))) {}
 static inline void pcp_close_sadc_archive(void) {}
 #endif /* HAVE_PMI_APPEND */
 

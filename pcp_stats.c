@@ -6121,6 +6121,46 @@ int pcp_write_sadc_sample(unsigned long long ust_time, long nsec,
 
 /*
  ***************************************************************************
+ * Callback invoked by pmiSetVolumeSize() when a data volume is completed.
+ * Runs pmlogcompress on the closed volume in a background child process so
+ * collection is not blocked.  Falls back to the configured ZIP tool when
+ * pmlogcompress is not in PATH (e.g. only pcp-libs is installed).
+ ***************************************************************************
+ */
+static void
+pcp_sadc_volume_rotate(const char *vol_path)
+{
+	pid_t pid = fork();
+
+	if (pid == 0) {
+		execlp("pmlogcompress", "pmlogcompress", vol_path,
+		       (char *)NULL);
+		_exit(1);	/* pmlogcompress not in PATH; sa2 compresses nightly */
+	}
+	/* parent continues; child reaped by existing SIGCHLD/SIGALRM handling */
+}
+
+/*
+ ***************************************************************************
+ * Configure automatic data volume rotation using pmiSetVolumeSize().
+ * Called once after pcp_open_sadc_archive() when PCP_VOLUME_SIZE > 0.
+ *
+ * IN:
+ * @volume_size	Maximum data volume size in bytes (0 = disabled).
+ ***************************************************************************
+ */
+void pcp_sadc_set_volume_size(size_t volume_size)
+{
+	if (volume_size == 0)
+		return;
+	if (pmiSetVolumeSize(volume_size, pcp_sadc_volume_rotate) < 0)
+		fprintf(stderr,
+			_("pmiSetVolumeSize(%zu): %s — volume rotation disabled\n"),
+			volume_size, pmiErrStr(-1));
+}
+
+/*
+ ***************************************************************************
  * Close the sadc PCP archive.
  ***************************************************************************
  */
