@@ -1177,13 +1177,8 @@ __print_funct_t pcp_print_memory_stats(struct activity *a, int curr)
 	struct stats_memory
 		*smc = (struct stats_memory *) a->buf[curr];
 
-	if (DISPLAY_MEMORY(a->opt_flags)) {
-		pcp_print_ram_memory_stats(smc, DISPLAY_MEM_ALL(a->opt_flags));
-	}
-
-	if (DISPLAY_SWAP(a->opt_flags)) {
-		pcp_print_swap_memory_stats(smc);
-	}
+	pcp_print_ram_memory_stats(smc, TRUE);
+	pcp_print_swap_memory_stats(smc);
 }
 
 /*
