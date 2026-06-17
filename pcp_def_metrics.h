@@ -463,6 +463,7 @@ extern struct act_metrics kqueue_metrics;
  ***************************************************************************
  */
 void pcp_def_disk_metrics(struct activity *);
+void pcp_probe_disk_instances(struct activity *);
 
 enum {
 	DISK_PERDEV_READ,
@@ -505,6 +506,7 @@ extern struct act_metrics disk_metrics;
  ***************************************************************************
  */
 void pcp_def_net_dev_metrics(struct activity *);
+void pcp_probe_net_dev_instances(struct activity *);
 
 enum {
 	NET_PERINTF_INPACKETS,

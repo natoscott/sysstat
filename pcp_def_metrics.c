@@ -31,6 +31,7 @@
 #include "pcp_def_metrics.h"
 
 extern struct activity *act[];
+extern uint64_t flags;
 
 /*
  ***************************************************************************
@@ -1839,6 +1840,42 @@ void pcp_def_perdisk_instances(struct activity *a)
 
 /*
  ***************************************************************************
+ * Probe for disk device names from the first read of buf[0] and populate
+ * item_list so that pcp_def_perdisk_instances() can register per-device
+ * PCP instances.  Called in the sadc direct-write path where item_list is
+ * otherwise NULL (no command-line device filter).
+ *
+ * Must be called after read_stats() has filled a->buf[0].
+ *
+ * IN:
+ * @a		Activity structure with disk statistics in buf[0].
+ ***************************************************************************
+ */
+void pcp_probe_disk_instances(struct activity *a)
+{
+	int i;
+	struct stats_disk *sdc;
+	char *dev_name;
+
+	if (a->item_list != NULL)
+		return;	/* already populated (command-line filter or prior probe) */
+
+	for (i = 0; i < a->_nr0; i++) {
+		sdc = (struct stats_disk *)((char *)a->_buf0 + i * a->msize);
+		dev_name = get_device_name(sdc->major, sdc->minor, sdc->wwn,
+					   sdc->part_nr,
+					   DISPLAY_PRETTY(flags),
+					   DISPLAY_PERSIST_NAME_S(flags),
+					   USE_STABLE_ID(flags), NULL);
+		if (dev_name && dev_name[0])
+			a->item_list_sz += add_list_item(&a->item_list,
+							 dev_name,
+							 MAX_DEV_LEN, NULL);
+	}
+}
+
+/*
+ ***************************************************************************
  * Define PCP metrics for disks statistics.
  *
  * IN:
@@ -2005,6 +2042,35 @@ void pcp_def_net_dev_instances(struct activity *a)
 
 	for (list = a->item_list; list != NULL; list = list->next) {
 		act_add_instance(a, NET_PERINTF_INBYTES, list->item_name, inst++);
+	}
+}
+
+/*
+ ***************************************************************************
+ * Probe for network interface names from the first read of buf[0] and
+ * populate item_list so that pcp_def_net_dev_instances() can register
+ * per-interface PCP instances.  Mirrors pcp_probe_disk_instances().
+ *
+ * Must be called after read_stats() has filled a->buf[0].
+ *
+ * IN:
+ * @a		Activity structure with net_dev statistics in buf[0].
+ ***************************************************************************
+ */
+void pcp_probe_net_dev_instances(struct activity *a)
+{
+	int i;
+	struct stats_net_dev *sndc;
+
+	if (a->item_list != NULL)
+		return;
+
+	for (i = 0; i < a->_nr0; i++) {
+		sndc = (struct stats_net_dev *)((char *)a->_buf0 + i * a->msize);
+		if (sndc->interface[0])
+			a->item_list_sz += add_list_item(&a->item_list,
+							 sndc->interface,
+							 MAX_IFACE_LEN, NULL);
 	}
 }
 
