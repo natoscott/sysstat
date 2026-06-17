@@ -7,8 +7,9 @@
  * mpstat's live read path fills (st_cpu, uptime_cs, mp_tstamp, cpu_nr)
  * then calls the existing write_stats() display function unchanged.
  *
- * PCP delivers CPU times in milliseconds; the globals expect jiffies.
- * Conversion: jiffies = ms * hz / 1000.
+ * PCP delivers CPU times in milliseconds; we store them directly as ms and
+ * use a millisecond-based interval so that percentages computed by
+ * ll_sp_value() are correct without any unit conversion.
  */
 
 #ifdef HAVE_PCP
@@ -45,6 +46,7 @@ extern int                  cpu_nr;
 extern uint64_t             actflags;
 extern uint64_t             xflags;
 extern unsigned int         flags;
+extern unsigned char       *cpu_bitmap;
 
 /* PMIDs — use values from pcp_def_metrics.h, already the correct PMIDs */
 enum {
@@ -126,8 +128,6 @@ inst_u64(pmValueSet *vset, int inst_id)
 	return 0;
 }
 
-#define MS_TO_J(ms) ((ms) * hz / 1000)
-
 static void
 build_cpu_snap(int s, pmResult *result)
 {
@@ -147,18 +147,18 @@ build_cpu_snap(int s, pmResult *result)
 		}
 	}
 
-	/* Slot 0: all-CPU aggregate */
+	/* Slot 0: all-CPU aggregate (raw ms values — interval is also in ms) */
 	scc = &st_cpu[s][0];
-	scc->cpu_user       = MS_TO_J(scalar_u64(vs[PCP_MPSTAT_ALLCPU_USER]));
-	scc->cpu_nice       = MS_TO_J(scalar_u64(vs[PCP_MPSTAT_ALLCPU_NICE]));
-	scc->cpu_sys        = MS_TO_J(scalar_u64(vs[PCP_MPSTAT_ALLCPU_SYS]));
-	scc->cpu_idle       = MS_TO_J(scalar_u64(vs[PCP_MPSTAT_ALLCPU_IDLE]));
-	scc->cpu_iowait     = MS_TO_J(scalar_u64(vs[PCP_MPSTAT_ALLCPU_IOWAIT]));
-	scc->cpu_hardirq    = MS_TO_J(scalar_u64(vs[PCP_MPSTAT_ALLCPU_HARDIRQ]));
-	scc->cpu_softirq    = MS_TO_J(scalar_u64(vs[PCP_MPSTAT_ALLCPU_SOFTIRQ]));
-	scc->cpu_steal      = MS_TO_J(scalar_u64(vs[PCP_MPSTAT_ALLCPU_STEAL]));
-	scc->cpu_guest      = MS_TO_J(scalar_u64(vs[PCP_MPSTAT_ALLCPU_GUEST]));
-	scc->cpu_guest_nice = MS_TO_J(scalar_u64(vs[PCP_MPSTAT_ALLCPU_GUESTNICE]));
+	scc->cpu_user       = scalar_u64(vs[PCP_MPSTAT_ALLCPU_USER]);
+	scc->cpu_nice       = scalar_u64(vs[PCP_MPSTAT_ALLCPU_NICE]);
+	scc->cpu_sys        = scalar_u64(vs[PCP_MPSTAT_ALLCPU_SYS]);
+	scc->cpu_idle       = scalar_u64(vs[PCP_MPSTAT_ALLCPU_IDLE]);
+	scc->cpu_iowait     = scalar_u64(vs[PCP_MPSTAT_ALLCPU_IOWAIT]);
+	scc->cpu_hardirq    = scalar_u64(vs[PCP_MPSTAT_ALLCPU_HARDIRQ]);
+	scc->cpu_softirq    = scalar_u64(vs[PCP_MPSTAT_ALLCPU_SOFTIRQ]);
+	scc->cpu_steal      = scalar_u64(vs[PCP_MPSTAT_ALLCPU_STEAL]);
+	scc->cpu_guest      = scalar_u64(vs[PCP_MPSTAT_ALLCPU_GUEST]);
+	scc->cpu_guest_nice = scalar_u64(vs[PCP_MPSTAT_ALLCPU_GUESTNICE]);
 
 	/* Slots 1..cpu_nr: per-CPU (instance ID = CPU number) */
 	if (!vs[PCP_MPSTAT_PERCPU_USER]) return;
@@ -169,16 +169,16 @@ build_cpu_snap(int s, pmResult *result)
 		if (cpu_id < 0 || cpu_id >= cpu_nr) continue;
 
 		scc = &st_cpu[s][cpu_id + 1];
-		scc->cpu_user       = MS_TO_J(inst_u64(vs[PCP_MPSTAT_PERCPU_USER],      cpu_id));
-		scc->cpu_nice       = MS_TO_J(inst_u64(vs[PCP_MPSTAT_PERCPU_NICE],      cpu_id));
-		scc->cpu_sys        = MS_TO_J(inst_u64(vs[PCP_MPSTAT_PERCPU_SYS],       cpu_id));
-		scc->cpu_idle       = MS_TO_J(inst_u64(vs[PCP_MPSTAT_PERCPU_IDLE],      cpu_id));
-		scc->cpu_iowait     = MS_TO_J(inst_u64(vs[PCP_MPSTAT_PERCPU_IOWAIT],    cpu_id));
-		scc->cpu_hardirq    = MS_TO_J(inst_u64(vs[PCP_MPSTAT_PERCPU_HARDIRQ],   cpu_id));
-		scc->cpu_softirq    = MS_TO_J(inst_u64(vs[PCP_MPSTAT_PERCPU_SOFTIRQ],   cpu_id));
-		scc->cpu_steal      = MS_TO_J(inst_u64(vs[PCP_MPSTAT_PERCPU_STEAL],     cpu_id));
-		scc->cpu_guest      = MS_TO_J(inst_u64(vs[PCP_MPSTAT_PERCPU_GUEST],     cpu_id));
-		scc->cpu_guest_nice = MS_TO_J(inst_u64(vs[PCP_MPSTAT_PERCPU_GUESTNICE], cpu_id));
+		scc->cpu_user       = inst_u64(vs[PCP_MPSTAT_PERCPU_USER],      cpu_id);
+		scc->cpu_nice       = inst_u64(vs[PCP_MPSTAT_PERCPU_NICE],      cpu_id);
+		scc->cpu_sys        = inst_u64(vs[PCP_MPSTAT_PERCPU_SYS],       cpu_id);
+		scc->cpu_idle       = inst_u64(vs[PCP_MPSTAT_PERCPU_IDLE],      cpu_id);
+		scc->cpu_iowait     = inst_u64(vs[PCP_MPSTAT_PERCPU_IOWAIT],    cpu_id);
+		scc->cpu_hardirq    = inst_u64(vs[PCP_MPSTAT_PERCPU_HARDIRQ],   cpu_id);
+		scc->cpu_softirq    = inst_u64(vs[PCP_MPSTAT_PERCPU_SOFTIRQ],   cpu_id);
+		scc->cpu_steal      = inst_u64(vs[PCP_MPSTAT_PERCPU_STEAL],     cpu_id);
+		scc->cpu_guest      = inst_u64(vs[PCP_MPSTAT_PERCPU_GUEST],     cpu_id);
+		scc->cpu_guest_nice = inst_u64(vs[PCP_MPSTAT_PERCPU_GUESTNICE], cpu_id);
 	}
 }
 
@@ -201,12 +201,12 @@ pcp_mpstat_run(const char *archive)
 	while ((sts = pmFetch(PCP_MPSTAT_NR, pcp_mpstat_pmids, &result)) >= 0) {
 		struct timespec curr_tv;
 		time_t t;
-		unsigned long long curr_ts_cs;
+		unsigned long long curr_ts_ms;
 
 		curr_tv = result->timestamp;
 		t = (time_t)curr_tv.tv_sec;
-		curr_ts_cs = (unsigned long long)curr_tv.tv_sec * 100
-			     + curr_tv.tv_nsec / 10000000;
+		curr_ts_ms = (unsigned long long)curr_tv.tv_sec * 1000
+			     + curr_tv.tv_nsec / 1000000;
 
 		if (first) {
 			/*
@@ -232,7 +232,7 @@ pcp_mpstat_run(const char *archive)
 			}
 			cpu_nr = percpu_vset->numval;
 
-			for (i = 0; i < 3; i++) {
+			for (i = 0; i < 2; i++) {
 				st_cpu[i] = calloc(cpu_nr + 1, sizeof(struct stats_cpu));
 				if (!st_cpu[i]) {
 					perror("calloc");
@@ -242,9 +242,9 @@ pcp_mpstat_run(const char *archive)
 			}
 		}
 
-		/* Set mpstat's timestamp and uptime_cs globals */
+		/* Set mpstat's timestamp and uptime_cs globals (stored as ms here) */
 		localtime_r(&t, &mp_tstamp[curr]);
-		uptime_cs[curr] = curr_ts_cs;
+		uptime_cs[curr] = curr_ts_ms;
 
 		build_cpu_snap(curr, result);
 
@@ -252,6 +252,13 @@ pcp_mpstat_run(const char *archive)
 			/* actflags drives what write_stats displays; ensure -u is set */
 			if (!actflags)
 				actflags |= M_D_CPU;
+			/*
+			 * cpu_bitmap is zeroed by salloc_mp_struct and only set
+			 * by main after the option loop — which we bypass via exit().
+			 * Select all CPUs (bit 0 = aggregate, bits 1..cpu_nr = each CPU).
+			 */
+			if (!*cpu_bitmap)
+				memset(cpu_bitmap, ~0, ((cpu_nr + 1) >> 3) + 1);
 			write_stats(curr, TRUE);
 		}
 
@@ -259,14 +266,14 @@ pcp_mpstat_run(const char *archive)
 		prev_result = result;
 		result = NULL;
 
-		curr = (curr == 1) ? 2 : 1;
+		curr ^= 1;
 		first = 0;
 	}
 out:
 
 	if (result) pmFreeResult(result);
 	if (prev_result) pmFreeResult(prev_result);
-	for (i = 0; i < 3; i++) { free(st_cpu[i]); st_cpu[i] = NULL; }
+	for (i = 0; i < 2; i++) { free(st_cpu[i]); st_cpu[i] = NULL; }
 
 	pmDestroyContext(ctx);
 	return 0;
