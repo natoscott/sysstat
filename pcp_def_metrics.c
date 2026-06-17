@@ -1757,6 +1757,13 @@ void pcp_def_queue_metrics(struct activity *a)
 	act_add_metric(a, KQUEUE_BLOCKED);
 	act_add_metric(a, KQUEUE_LOADAVG);
 
+	/*
+	 * Pre-allocate to the final max_inst (3 load-average periods) before
+	 * any scalar handles so that a later pcp_alloc_handles() realloc does
+	 * not corrupt the stride of already-allocated scalar handles.
+	 */
+	pcp_alloc_handles(a->metrics, 3);
+
 	/* Scalar metrics use slot 0 */
 	pcp_alloc_handle(a->metrics, KQUEUE_RUNNABLE,  0, PM_IN_NULL, NULL);
 	pcp_alloc_handle(a->metrics, KQUEUE_PROCESSES, 0, PM_IN_NULL, NULL);
