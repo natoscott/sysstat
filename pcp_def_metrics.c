@@ -1483,16 +1483,9 @@ void pcp_def_swap_memory_metrics(struct activity *a)
  */
 void pcp_def_memory_metrics(struct activity *a)
 {
-	if (DISPLAY_MEMORY(a->opt_flags)) {
-		pcp_def_ram_memory_metrics(a);
-		if (DISPLAY_MEM_ALL(a->opt_flags)) {
-			pcp_def_all_memory_metrics(a);
-		}
-	}
-
-	if (DISPLAY_SWAP(a->opt_flags)) {
-		pcp_def_swap_memory_metrics(a);
-	}
+	pcp_def_ram_memory_metrics(a);
+	pcp_def_all_memory_metrics(a);
+	pcp_def_swap_memory_metrics(a);
 
 	for (size_t _i = 0; _i < MEM_METRIC_COUNT; _i++)
 		pcp_alloc_handle(a->metrics, _i, 0, PM_IN_NULL, NULL);
@@ -4170,14 +4163,14 @@ pmDesc power_fan_metric_descs[] = {
 	[POWER_FAN_RPM] = {
 		.pmid = PMID_POWER_FAN_RPM,
 		.indom = PMI_INDOM(34, 0),
-		.units = PMI_UNITS(0, 0, 0, 0, 0, 0),
+		.units = PMI_UNITS(0, -1, 1, 0, PM_TIME_MIN, PM_COUNT_ONE),
 		.type = PM_TYPE_U64,
 		.sem = PM_SEM_INSTANT,
 	},
 	[POWER_FAN_DRPM] = {
 		.pmid = PMID_POWER_FAN_DRPM,
 		.indom = PMI_INDOM(34, 0),
-		.units = PMI_UNITS(0, 0, 0, 0, 0, 0),
+		.units = PMI_UNITS(0, -1, 1, 0, PM_TIME_MIN, PM_COUNT_ONE),
 		.type = PM_TYPE_U64,
 		.sem = PM_SEM_INSTANT,
 	},
