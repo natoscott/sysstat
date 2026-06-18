@@ -1769,8 +1769,13 @@ int main(int argc, char **argv)
 				pcp_probe_disk_instances(act[p]);
 				break;
 			case A_NET_DEV:
-			case A_NET_EDEV:
 				pcp_probe_net_dev_instances(act[p]);
+				break;
+			case A_NET_EDEV:
+				pcp_probe_net_edev_instances(act[p]);
+				break;
+			case A_FS:
+				pcp_probe_filesystem_instances(act[p]);
 				break;
 			default:
 				break;

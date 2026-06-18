@@ -509,6 +509,7 @@ extern struct act_metrics disk_metrics;
  */
 void pcp_def_net_dev_metrics(struct activity *);
 void pcp_probe_net_dev_instances(struct activity *);
+void pcp_probe_net_edev_instances(struct activity *);
 
 enum {
 	NET_PERINTF_INPACKETS,
@@ -1228,6 +1229,7 @@ extern struct act_metrics power_usb_metrics;
  ***************************************************************************
  */
 void pcp_def_filesystem_metrics(struct activity *);
+void pcp_probe_filesystem_instances(struct activity *);
 
 enum {
 	FILESYS_CAPACITY,

@@ -2109,6 +2109,67 @@ void pcp_probe_net_dev_instances(struct activity *a)
 
 /*
  ***************************************************************************
+ * Probe for network interface names from A_NET_EDEV buf[0] and populate
+ * item_list.  Uses stats_net_edev which has the interface field at the
+ * END of the struct, unlike stats_net_dev.  Mirrors pcp_probe_net_dev_instances().
+ *
+ * Must be called after read_stats() has filled a->buf[0].
+ *
+ * IN:
+ * @a		Activity structure with net_edev statistics in buf[0].
+ ***************************************************************************
+ */
+void pcp_probe_net_edev_instances(struct activity *a)
+{
+	int i;
+	struct stats_net_edev *snedc;
+
+	if (a->item_list != NULL)
+		return;
+
+	for (i = 0; i < a->_nr0; i++) {
+		snedc = (struct stats_net_edev *)((char *)a->_buf0 + i * a->msize);
+		if (snedc->interface[0])
+			a->item_list_sz += add_list_item(&a->item_list,
+							 snedc->interface,
+							 MAX_IFACE_LEN, NULL);
+	}
+}
+
+/*
+ ***************************************************************************
+ * Probe for filesystem names from buf[0] and populate item_list so that
+ * pcp_def_filesystem_instances() can register per-filesystem PCP instances.
+ * Mirrors pcp_probe_disk_instances().
+ *
+ * Must be called after read_stats() has filled a->buf[0].
+ *
+ * IN:
+ * @a		Activity structure with filesystem statistics in buf[0].
+ ***************************************************************************
+ */
+void pcp_probe_filesystem_instances(struct activity *a)
+{
+	int i;
+	struct stats_filesystem *sfc;
+	const char *name;
+
+	if (a->item_list != NULL)
+		return;
+
+	for (i = 0; i < a->_nr0; i++) {
+		sfc = (struct stats_filesystem *)((char *)a->_buf0 + i * a->msize);
+		/* Use the persistent name if available, otherwise the block device name */
+		name = sfc->fs_name[0] ? sfc->fs_name : sfc->mountp;
+		if (name && name[0])
+			a->item_list_sz += add_list_item(&a->item_list,
+							 (char *)name,
+							 MAX_FS_LEN, NULL);
+	}
+}
+
+/*
+ ***************************************************************************
  * Define PCP metrics for network interfaces (errors) statistics.
  *
  * IN:
@@ -4862,10 +4923,10 @@ void pcp_def_psi_metrics(struct activity *a)
 		/* Create metrics for A_PSI_CPU */
 		pcp_def_psicpu_metrics(a);
 		/*
-		 * SOMETOTAL is scalar (PM_IN_NULL, slot 0).
-		 * SOMEAVG instances have PCP inst IDs 10/60/300 mapped to
-		 * sequential slots 0/1/2; use pcp_find_slot() at write time.
+		 * Pre-allocate to 3 (the avg time-window count) before any
+		 * scalar handle so the stride stays correct when max_inst grows.
 		 */
+		pcp_alloc_handles(a->metrics, 3);
 		pcp_alloc_handle(a->metrics, PSI_CPU_SOMETOTAL, 0, PM_IN_NULL, NULL);
 		pcp_alloc_handle(a->metrics, PSI_CPU_SOMEAVG,   0, 10,  "10 second");
 		pcp_alloc_handle(a->metrics, PSI_CPU_SOMEAVG,   1, 60,  "1 minute");
@@ -4874,6 +4935,7 @@ void pcp_def_psi_metrics(struct activity *a)
 	else if (a->id == A_PSI_IO) {
 		/* Create metrics for A_PSI_IO */
 		pcp_def_psiio_metrics(a);
+		pcp_alloc_handles(a->metrics, 3);
 		pcp_alloc_handle(a->metrics, PSI_IO_SOMETOTAL, 0, PM_IN_NULL, NULL);
 		pcp_alloc_handle(a->metrics, PSI_IO_SOMEAVG,   0, 10,  "10 second");
 		pcp_alloc_handle(a->metrics, PSI_IO_SOMEAVG,   1, 60,  "1 minute");
@@ -4886,6 +4948,7 @@ void pcp_def_psi_metrics(struct activity *a)
 	else if (a->id == A_PSI_MEM) {
 		/* Create metrics for A_PSI_MEM */
 		pcp_def_psimem_metrics(a);
+		pcp_alloc_handles(a->metrics, 3);
 		pcp_alloc_handle(a->metrics, PSI_MEM_SOMETOTAL, 0, PM_IN_NULL, NULL);
 		pcp_alloc_handle(a->metrics, PSI_MEM_SOMEAVG,   0, 10,  "10 second");
 		pcp_alloc_handle(a->metrics, PSI_MEM_SOMEAVG,   1, 60,  "1 minute");
@@ -4911,6 +4974,7 @@ pmDesc psi_cpu_metric_descs[] = {
 	},
 	[PSI_CPU_SOMEAVG] = {
 		.pmid = PMID_PSI_CPU_SOMEAVG,
+		.indom = PMI_INDOM(60, 37),	/* shared with io/mem avg */
 		.units = PMI_UNITS(0, 0, 0, 0, 0, 0),
 		.type = PM_TYPE_FLOAT,
 		.sem = PM_SEM_INSTANT,
