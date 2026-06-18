@@ -403,9 +403,13 @@ pcp_local_init(struct pcp_local_config *cfg, const char *conffile)
 	 * Point libpcp at the local DSO PMDA configuration and namespace so
 	 * that PM_CONTEXT_LOCAL loads the correct set of DSO PMDAs and resolves
 	 * metric names against the matching local PMNS.
+	 * Use pmGetConfig() for platform-portable paths rather than hardcoding.
 	 */
-	setenv("PCP_PMCDCONF_FILE", "/etc/pcp/local.conf", 0);
-	setenv("PMNS_DEFAULT",      "/var/lib/pcp/pmns/root.local", 0);
+	char path[MAXPATHLEN];
+	pmsprintf(path, sizeof(path), "%s/local.conf", pmGetConfig("PCP_SYSCONF_DIR"));
+	setenv("PCP_PMCDCONF_FILE", path, 0);
+	pmsprintf(path, sizeof(path), "%s/pmns/local.root", pmGetConfig("PCP_VAR_DIR"));
+	setenv("PMNS_DEFAULT",      path, 0);
 
 	/* Open PM_CONTEXT_LOCAL — loads proc PMDA (and any extras above) */
 	sts = pmNewContext(PM_CONTEXT_LOCAL, NULL);
