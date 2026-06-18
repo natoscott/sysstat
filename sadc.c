@@ -80,20 +80,37 @@ char pcp_archive[MAX_FILE_LEN] = "";
 static struct pcp_local_config local_cfg;
 
 /*
- * Derive the PCP archive base path from the native sa file path, following
- * the agreed naming convention:
+ * Derive the PCP archive base path from the native sa file path.
  *
- *   /var/log/sa/sa27        ->  /var/log/sa/pcp27/pcp27
- *   /var/log/sa/sa20260527  ->  /var/log/sa/pcp20260527/pcp20260527
+ * The sa file is left unchanged.  The PCP directory mirrors the sa
+ * day-of-month convention (pcp<DD> matches sa<DD>), and the archive
+ * basename uses the full ISO date in local time so the file is
+ * unambiguous without directory context and follows pmlogger conventions:
+ *
+ *   sa file:    /var/log/sa/sa18          (unchanged)
+ *   PCP path:   /var/log/sa/pcp18/20260618
+ *
+ * The "18" in pcp18 and the "18" in 20260618 always agree because both
+ * are derived from the same local-time epoch.
  *
  * Creates the daily PCP directory if it does not already exist.
  * Writes the result into @out (length @len).
+ *
+ * IN:
+ * @safile	Path to the native sa file (provides the day fragment).
+ * @epoch	Start epoch (seconds) for the ISO date; 0 = use current time.
+ * @out		Buffer to receive the archive base path.
+ * @len		Size of @out.
  */
 static void
-set_pcp_default_archive(const char *safile, char *out, size_t len)
+set_pcp_default_archive(const char *safile, time_t epoch,
+			char *out, size_t len)
 {
 	char dir[MAX_FILE_LEN], pcp_dir[MAX_FILE_LEN];
+	char isodate[16];
 	const char *base, *datefrag, *slash;
+	struct tm lt;
+	time_t t = epoch ? epoch : time(NULL);
 
 	slash = strrchr(safile, '/');
 	if (slash) {
@@ -105,16 +122,19 @@ set_pcp_default_archive(const char *safile, char *out, size_t len)
 		base = safile;
 	}
 
-	/* Strip leading "sa" from basename to get the date fragment */
+	/* Strip leading "sa" from basename to get the day fragment (e.g. "18") */
 	datefrag = (strncmp(base, "sa", 2) == 0) ? base + 2 : base;
 
-	/* /var/log/sa/pcp<DD>/ */
+	/* ISO date in local time — "DD" part must match datefrag */
+	localtime_r(&t, &lt);
+	strftime(isodate, sizeof(isodate), "%Y%m%d", &lt);
+
 	pmsprintf(pcp_dir, sizeof(pcp_dir), "%s/pcp%s", dir, datefrag);
 	mkdir(pcp_dir, 0755);	/* harmless if already exists */
 
-	/* Archive base: /var/log/sa/pcp<DD>/pcp<DD> */
-	pmsprintf(out, len, "%s/pcp%s", pcp_dir, datefrag);
+	pmsprintf(out, len, "%s/%s", pcp_dir, isodate);
 }
+
 #endif /* HAVE_PMI_APPEND */
 
 int optz = 0;
@@ -1302,7 +1322,9 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 				pcp_restore_act_options();
 
 				pcp_close_sadc_archive();
-				set_pcp_default_archive(ofile, pcp_archive,
+				set_pcp_default_archive(ofile,
+							(time_t)file_hdr.sa_ust_time,
+							pcp_archive,
 							sizeof(pcp_archive));
 				pcp_open_sadc_archive(pcp_archive, &file_hdr);
 				pcp_write_file_header_metrics(&file_hdr);
@@ -1659,11 +1681,14 @@ int main(int argc, char **argv)
 		 */
 		if (!pcp_archive[0]) {
 			if (ofile[0])
-				set_pcp_default_archive(ofile, pcp_archive,
+				set_pcp_default_archive(ofile,
+							(time_t)file_hdr.sa_ust_time,
+							pcp_archive,
 							sizeof(pcp_archive));
 			else
 				/* No output file (stdout only) — use today's default */
 				set_pcp_default_archive("/var/log/sa/sa00",
+							0,
 							pcp_archive,
 							sizeof(pcp_archive));
 		}

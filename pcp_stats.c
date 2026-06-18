@@ -5987,6 +5987,7 @@ void pcp_open_sadf_archive(const char *dfile, const struct file_header *hdr)
 
 	pmiStart(dfile, FALSE);
 	pmiSetTimezone(hdr->sa_tzname);
+	pmiSetZoneinfo(NULL);	/* auto-detect Olson name from /etc/localtime */
 	pmiSetHostname(hdr->sa_nodename);
 	pcp_write_file_header_metrics(hdr);
 	pcp_register_sadc_metrics();
@@ -6087,6 +6088,7 @@ int pcp_open_sadc_archive(const char *path, const struct file_header *hdr)
 		return sts;
 	pmiSetHostname(hdr->sa_nodename);
 	pmiSetTimezone(hdr->sa_tzname);
+	pmiSetZoneinfo(NULL);	/* auto-detect Olson name from /etc/localtime */
 	return sts;
 }
 
