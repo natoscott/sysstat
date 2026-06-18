@@ -26,6 +26,8 @@
 cifs
 # Uncomment 'linux' to record extended kernel metrics via the PMDA
 # (in addition to those already written by sadc's built-in collectors).
+# Required for the NUMA, network interface property, and device-map
+# metrics listed in the commented-out sections below.
 # linux
 
 [metrics]
@@ -112,6 +114,39 @@ proc.id.euid_nm
 proc.id.gid
 proc.id.egid
 proc.namespaces.envid
+
+# NUMA per-node CPU statistics (requires linux PMDA via [pmdas] above)
+# Provides per-NUMA-node CPU breakdowns for atop-summary NUMA view.
+# kernel.pernode.cpu.user
+# kernel.pernode.cpu.nice
+# kernel.pernode.cpu.sys
+# kernel.pernode.cpu.idle
+# kernel.pernode.cpu.wait.total
+# kernel.pernode.cpu.irq.hard
+# kernel.pernode.cpu.irq.soft
+# kernel.pernode.cpu.steal
+# kernel.pernode.cpu.guest
+
+# NUMA memory statistics (requires linux PMDA)
+# mem.numa.util.free
+# mem.numa.util.total
+# mem.numa.util.active
+# mem.numa.util.inactive
+# mem.numa.util.dirty
+# mem.numa.util.filePages
+# mem.numa.util.slab
+# mem.numa.util.shmem
+
+# Network interface physical properties (requires linux PMDA)
+# network.interface.baudrate
+# network.interface.duplex
+# network.interface.wireless
+
+# Hardware inventory (requires linux PMDA)
+# hinv.nnode          — number of NUMA nodes
+# hinv.map.cpu_node   — per-CPU NUMA node mapping
+# hinv.map.dmname     — device-mapper device name mapping
+# hinv.map.mdname     — md-raid device name mapping
 
 # Tape drive statistics (-a option for tapestat)
 # tape.dev.* is in the linux PMDA, loaded automatically via PM_CONTEXT_LOCAL
