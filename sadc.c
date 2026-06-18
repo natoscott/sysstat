@@ -1652,7 +1652,8 @@ int main(int argc, char **argv)
 
 #ifdef HAVE_PMI_APPEND
 	if (WRITE_PCP_OUTPUT(flags)) {
-		int	p, sts;
+		int			p, sts;
+		unsigned long long	system_uptime = 0;
 
 		/*
 		 * Restore the full user-requested activity set: open_ofile()
@@ -1740,6 +1741,12 @@ int main(int argc, char **argv)
 
 		/* File-header metrics and sadc self-description */
 		pcp_write_file_header_metrics(&file_hdr);
+		read_uptime(&system_uptime);
+		pcp_write_inventory_metrics(
+			act[get_activity_position(act, A_DISK,    EXIT_IF_NOT_FOUND)]->nr_ini,
+			act[get_activity_position(act, A_NET_DEV, EXIT_IF_NOT_FOUND)]->nr_ini,
+			(unsigned long long) time(NULL),
+			system_uptime);
 		pcp_write_sadc_header(interval);
 
 		/*

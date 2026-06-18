@@ -290,6 +290,10 @@ const char *file_header_metric_names[] = {
 	[FILE_HEADER_UNAME_SYSNAME] = "kernel.uname.sysname",
 	[FILE_HEADER_UNAME_MACHINE] = "kernel.uname.machine",
 	[FILE_HEADER_UNAME_NODENAME] = "kernel.uname.nodename",
+	[FILE_HEADER_BOOTTIME]       = "kernel.all.boottime",
+	[FILE_HEADER_NDISK]          = "hinv.ndisk",
+	[FILE_HEADER_NINTERFACE]     = "hinv.ninterface",
+	[FILE_HEADER_PAGESIZE]       = "hinv.pagesize",
 };
 pmDesc file_header_metric_descs[] = {
 	[FILE_HEADER_CPU_COUNT] = {
@@ -332,6 +336,34 @@ pmDesc file_header_metric_descs[] = {
 		.indom = PM_INDOM_NULL,
 		.units = PMI_UNITS(0, 0, 0, 0, 0, 0),
 		.type = PM_TYPE_STRING,
+		.sem = PM_SEM_DISCRETE,
+	},
+	[FILE_HEADER_BOOTTIME] = {
+		.pmid = PMID_FILE_HEADER_BOOTTIME,
+		.indom = PM_INDOM_NULL,
+		.units = PMI_UNITS(0, 1, 0, 0, PM_TIME_SEC, 0),
+		.type = PM_TYPE_64,
+		.sem = PM_SEM_DISCRETE,
+	},
+	[FILE_HEADER_NDISK] = {
+		.pmid = PMID_FILE_HEADER_NDISK,
+		.indom = PM_INDOM_NULL,
+		.units = PMI_UNITS(0, 0, 0, 0, 0, 0),
+		.type = PM_TYPE_U32,
+		.sem = PM_SEM_DISCRETE,
+	},
+	[FILE_HEADER_NINTERFACE] = {
+		.pmid = PMID_FILE_HEADER_NINTERFACE,
+		.indom = PM_INDOM_NULL,
+		.units = PMI_UNITS(0, 0, 0, 0, 0, 0),
+		.type = PM_TYPE_U32,
+		.sem = PM_SEM_DISCRETE,
+	},
+	[FILE_HEADER_PAGESIZE] = {
+		.pmid = PMID_FILE_HEADER_PAGESIZE,
+		.indom = PM_INDOM_NULL,
+		.units = PMI_UNITS(1, 0, 0, PM_SPACE_BYTE, 0, 0),
+		.type = PM_TYPE_U32,
 		.sem = PM_SEM_DISCRETE,
 	},
 };
@@ -1534,6 +1566,10 @@ void pcp_def_swap_memory_metrics(struct activity *a)
 	act_add_metric(a, MEM_UTIL_SWAPFREE);
 	act_add_metric(a, MEM_UTIL_SWAPTOTAL);
 	act_add_metric(a, MEM_UTIL_SWAPCACHED);
+	act_add_metric(a, MEM_UTIL_SHMEM);
+	act_add_metric(a, MEM_UTIL_FREEMEM);
+	act_add_metric(a, SWAP_FREE);
+	act_add_metric(a, SWAP_LENGTH);
 }
 
 /*
@@ -1575,6 +1611,10 @@ const char *mem_metric_names[] = {
 	[MEM_UTIL_SWAPFREE] = "mem.util.swapFree",
 	[MEM_UTIL_SWAPTOTAL] = "mem.util.swapTotal",
 	[MEM_UTIL_SWAPCACHED] = "mem.util.swapCached",
+	[MEM_UTIL_SHMEM] = "mem.util.shmem",
+	[MEM_UTIL_FREEMEM] = "mem.freemem",
+	[SWAP_FREE] = "swap.free",
+	[SWAP_LENGTH] = "swap.length",
 };
 pmDesc mem_metric_descs[] = {
 	[MEM_PHYS_MB] = {
@@ -1714,6 +1754,34 @@ pmDesc mem_metric_descs[] = {
 		.pmid = PMID_MEM_UTIL_SWAPCACHED,
 		.indom = PM_INDOM_NULL,
 		.units = PMI_UNITS(1, 0, 0, PM_SPACE_KBYTE, 0, 0),
+		.type = PM_TYPE_U64,
+		.sem = PM_SEM_INSTANT,
+	},
+	[MEM_UTIL_SHMEM] = {
+		.pmid = PMID_MEM_UTIL_SHMEM,
+		.indom = PM_INDOM_NULL,
+		.units = PMI_UNITS(1, 0, 0, PM_SPACE_KBYTE, 0, 0),
+		.type = PM_TYPE_U64,
+		.sem = PM_SEM_INSTANT,
+	},
+	[MEM_UTIL_FREEMEM] = {
+		.pmid = PMID_MEM_UTIL_FREEMEM,
+		.indom = PM_INDOM_NULL,
+		.units = PMI_UNITS(1, 0, 0, PM_SPACE_KBYTE, 0, 0),
+		.type = PM_TYPE_U64,
+		.sem = PM_SEM_INSTANT,
+	},
+	[SWAP_FREE] = {
+		.pmid = PMID_SWAP_FREE,
+		.indom = PM_INDOM_NULL,
+		.units = PMI_UNITS(1, 0, 0, PM_SPACE_BYTE, 0, 0),
+		.type = PM_TYPE_U64,
+		.sem = PM_SEM_INSTANT,
+	},
+	[SWAP_LENGTH] = {
+		.pmid = PMID_SWAP_LENGTH,
+		.indom = PM_INDOM_NULL,
+		.units = PMI_UNITS(1, 0, 0, PM_SPACE_BYTE, 0, 0),
 		.type = PM_TYPE_U64,
 		.sem = PM_SEM_INSTANT,
 	},
@@ -1961,6 +2029,9 @@ void pcp_def_disk_metrics(struct activity *a)
 	act_add_metric(a, DISK_PERDEV_DISCARDACTIVE);
 	act_add_metric(a, DISK_PERDEV_AVACTIVE);
 	act_add_metric(a, DISK_PERDEV_AVQUEUE);
+	act_add_metric(a, DISK_PERDEV_BLKREAD);
+	act_add_metric(a, DISK_PERDEV_BLKWRITE);
+	act_add_metric(a, DISK_PERDEV_DISCARD);
 
 	pcp_alloc_item_list_handles(a);
 }
@@ -1979,6 +2050,9 @@ const char *disk_metric_names[] = {
 	[DISK_PERDEV_DISCARDACTIVE] = "disk.dev.discard_rawactive",
 	[DISK_PERDEV_AVACTIVE] = "disk.dev.avactive",
 	[DISK_PERDEV_AVQUEUE] = "disk.dev.aveq",
+	[DISK_PERDEV_BLKREAD] = "disk.dev.blkread",
+	[DISK_PERDEV_BLKWRITE] = "disk.dev.blkwrite",
+	[DISK_PERDEV_DISCARD] = "disk.dev.discard",
 };
 pmDesc disk_metric_descs[] = {
 	[DISK_PERDEV_READ] = {
@@ -2070,6 +2144,27 @@ pmDesc disk_metric_descs[] = {
 		.indom = PMI_INDOM(60, 1),
 		.units = PMI_UNITS(0, 1, 0, 0, PM_TIME_MSEC, 0),
 		.type = PM_TYPE_U32,
+		.sem = PM_SEM_COUNTER,
+	},
+	[DISK_PERDEV_BLKREAD] = {
+		.pmid = PMID_DISK_PERDEV_BLKREAD,
+		.indom = PMI_INDOM(60, 1),
+		.units = PMI_UNITS(0, 0, 1, 0, 0, PM_COUNT_ONE),
+		.type = PM_TYPE_U64,
+		.sem = PM_SEM_COUNTER,
+	},
+	[DISK_PERDEV_BLKWRITE] = {
+		.pmid = PMID_DISK_PERDEV_BLKWRITE,
+		.indom = PMI_INDOM(60, 1),
+		.units = PMI_UNITS(0, 0, 1, 0, 0, PM_COUNT_ONE),
+		.type = PM_TYPE_U64,
+		.sem = PM_SEM_COUNTER,
+	},
+	[DISK_PERDEV_DISCARD] = {
+		.pmid = PMID_DISK_PERDEV_DISCARD,
+		.indom = PMI_INDOM(60, 1),
+		.units = PMI_UNITS(0, 0, 1, 0, 0, PM_COUNT_ONE),
+		.type = PM_TYPE_U64,
 		.sem = PM_SEM_COUNTER,
 	},
 };

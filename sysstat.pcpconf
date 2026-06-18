@@ -68,6 +68,12 @@ proc.psinfo.maj_flt
 # Memory statistics (-r)
 proc.psinfo.vsize
 proc.psinfo.rss
+proc.memory.vmdata
+proc.memory.vmexe
+proc.memory.vmlib
+proc.memory.vmlock
+proc.memory.vmswap
+proc.memory.share
 
 # Stack statistics (-s)
 proc.memory.vmstack
@@ -96,8 +102,16 @@ proc.psinfo.pid
 proc.psinfo.cmd
 proc.psinfo.psargs
 proc.psinfo.wchan_s
+proc.psinfo.nice
+proc.psinfo.priority
+proc.psinfo.start_time
 proc.id.uid
 proc.id.uid_nm
+proc.id.euid
+proc.id.euid_nm
+proc.id.gid
+proc.id.egid
+proc.namespaces.envid
 
 # Tape drive statistics (-a option for tapestat)
 # tape.dev.* is in the linux PMDA, loaded automatically via PM_CONTEXT_LOCAL

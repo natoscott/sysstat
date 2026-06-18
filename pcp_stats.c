@@ -1108,6 +1108,19 @@ void pcp_print_swap_memory_stats(struct stats_memory *smc)
 
 	atom.ull = (unsigned long long)smc->caskb;
 	pmiPutAtomValueHandle(ACT_HANDLE(m, MEM_UTIL_SWAPCACHED, 0), &atom);
+
+	atom.ull = (unsigned long long)smc->shmemkb;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, MEM_UTIL_SHMEM, 0), &atom);
+
+	atom.ull = (unsigned long long)smc->frmkb;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, MEM_UTIL_FREEMEM, 0), &atom);
+
+	/* swap.free / swap.length are in bytes (frskb/tlskb are kB) */
+	atom.ull = (unsigned long long)smc->frskb * 1024;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, SWAP_FREE, 0), &atom);
+
+	atom.ull = (unsigned long long)smc->tlskb * 1024;
+	pmiPutAtomValueHandle(ACT_HANDLE(m, SWAP_LENGTH, 0), &atom);
 #endif	/* HAVE_PCP */
 }
 
@@ -1540,6 +1553,18 @@ __print_funct_t pcp_print_disk_stats(struct activity *a, int curr)
 
 		handle = ACT_HANDLE(m, DISK_PERDEV_AVQUEUE, slot);
 		atom.ul = (unsigned long)sdc->rq_ticks;
+		pmiPutAtomValueHandle(handle, &atom);
+
+		handle = ACT_HANDLE(m, DISK_PERDEV_BLKREAD, slot);
+		atom.ull = (unsigned long long)sdc->rd_sect;
+		pmiPutAtomValueHandle(handle, &atom);
+
+		handle = ACT_HANDLE(m, DISK_PERDEV_BLKWRITE, slot);
+		atom.ull = (unsigned long long)sdc->wr_sect;
+		pmiPutAtomValueHandle(handle, &atom);
+
+		handle = ACT_HANDLE(m, DISK_PERDEV_DISCARD, slot);
+		atom.ull = sdc->dc_ios;
 		pmiPutAtomValueHandle(handle, &atom);
 	}
 }
@@ -5962,6 +5987,41 @@ void pcp_write_file_header_metrics(const struct file_header *hdr)
 
 	atom.cp = (char *)hdr->sa_nodename;
 	pmiPutAtomValueHandle(ACT_HANDLE(&file_header_metrics, FILE_HEADER_UNAME_NODENAME, 0), &atom);
+
+	atom.ul = (unsigned long) sysconf(_SC_PAGESIZE);
+	pmiPutAtomValueHandle(ACT_HANDLE(&file_header_metrics, FILE_HEADER_PAGESIZE, 0), &atom);
+}
+
+/*
+ ***************************************************************************
+ * Write inventory metrics that require live-system data unavailable from
+ * the file header alone: disk count, interface count, and boot time.
+ * Called from sadc after all activities have been set up.
+ *
+ * IN:
+ * @nr_disk	Number of disk devices (A_DISK.nr_ini).
+ * @nr_iface	Number of network interfaces (A_NET_DEV.nr_ini).
+ * @ust_time	Timestamp of current sample (seconds since epoch).
+ * @uptime_cs	System uptime in centiseconds at @ust_time.
+ ***************************************************************************
+ */
+void pcp_write_inventory_metrics(__nr_t nr_disk, __nr_t nr_iface,
+				 unsigned long long ust_time,
+				 unsigned long long uptime_cs)
+{
+#ifdef HAVE_PMI_APPEND
+	pmAtomValue atom;
+
+	atom.ul = (unsigned long) nr_disk;
+	pmiPutAtomValueHandle(ACT_HANDLE(&file_header_metrics, FILE_HEADER_NDISK, 0), &atom);
+
+	atom.ul = (unsigned long) nr_iface;
+	pmiPutAtomValueHandle(ACT_HANDLE(&file_header_metrics, FILE_HEADER_NINTERFACE, 0), &atom);
+
+	/* boot time = current epoch - uptime_cs (centiseconds → seconds) */
+	atom.ll = (long long)(ust_time - uptime_cs / 100);
+	pmiPutAtomValueHandle(ACT_HANDLE(&file_header_metrics, FILE_HEADER_BOOTTIME, 0), &atom);
+#endif
 }
 
 /*
