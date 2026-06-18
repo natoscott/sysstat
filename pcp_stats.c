@@ -6298,6 +6298,34 @@ int pcp_write_sadc_sample(unsigned long long ust_time, long nsec,
 
 /*
  ***************************************************************************
+ * Register and write kernel.all.uptime per sample.
+ * This metric is declared in record_header_metric_descs[] for the sadf
+ * read path but was never written by sadc.  It is needed by PCP derived
+ * metrics such as proc.psinfo.age and proc.hog.cpu.
+ *
+ * IN:
+ * @uptime_cs	System uptime in centiseconds (from record_hdr.uptime_cs).
+ ***************************************************************************
+ */
+void pcp_write_uptime(unsigned long long uptime_cs)
+{
+#ifdef HAVE_PMI_APPEND
+	static int handle = -1;
+	pmAtomValue atom;
+
+	if (handle < 0)
+		handle = act_register_scalar_handle(&record_header_metrics,
+						    RECORD_HEADER_KERNEL_UPTIME);
+	if (handle >= 0) {
+		/* kernel.all.uptime is a double in seconds; uptime_cs is centiseconds */
+		atom.d = (double)uptime_cs / 100.0;
+		pmiPutAtomValueHandle(handle, &atom);
+	}
+#endif
+}
+
+/*
+ ***************************************************************************
  * Callback invoked by pmiSetVolumeSize() when a data volume is completed.
  * Runs pmlogcompress on the closed volume in a background child process so
  * collection is not blocked.  Falls back to the configured ZIP tool when

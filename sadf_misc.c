@@ -58,6 +58,7 @@ extern unsigned int svg_colors[][SVG_COL_PALETTE_SIZE];
 void pcp_write_data(struct record_header *record_hdr, unsigned int flags)
 {
 #ifdef HAVE_PCP
+	pcp_write_uptime(record_hdr->uptime_cs);
 	pcp_write_sadf_sample(record_hdr->ust_time);
 #endif
 }

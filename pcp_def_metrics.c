@@ -41,6 +41,33 @@ extern uint64_t flags;
 
 /*
  ***************************************************************************
+ * Register a scalar metric from an act_metrics group and return its write
+ * handle.  Combines pmiAddMetric + pmiGetHandle into one call, avoiding the
+ * repetitive .pmid/.type/.indom/.sem/.units expansion at every call site.
+ *
+ * IN:
+ * @m		Metric group containing descriptor and name arrays.
+ * @metric	Index within the group (e.g. RECORD_HEADER_KERNEL_UPTIME).
+ *
+ * RETURNS:
+ * PMI write handle on success, -1 on failure.
+ ***************************************************************************
+ */
+int act_register_scalar_handle(struct act_metrics *m, size_t metric)
+{
+	const char *name;
+	pmDesc *desc;
+
+	if (!m || metric >= m->count || !m->names || !m->descs)
+		return -1;
+	name = m->names[metric];
+	desc = &m->descs[metric];
+	pmiAddMetric(name, desc->pmid, desc->type, desc->indom, desc->sem, desc->units);
+	return pmiGetHandle(name, NULL);
+}
+
+/*
+ ***************************************************************************
  * Device classification helpers for secondary disk classes.
  *
  * IN:

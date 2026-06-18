@@ -132,6 +132,7 @@ void pcp_write_sadf_comment(const char *comment, unsigned long long ust_time);
 /* sadc direct-write wrappers — real implementations require PMI_APPEND */
 #ifdef HAVE_PMI_APPEND
 int  pcp_open_sadc_archive(const char *path, const struct file_header *hdr);
+void pcp_write_uptime(unsigned long long uptime_cs);
 int  pcp_write_sadc_sample(unsigned long long ust_time, long nsec,
 			   uint64_t flags);
 void pcp_sadc_set_volume_size(size_t volume_size);

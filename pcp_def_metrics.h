@@ -37,6 +37,9 @@ struct act_metrics {
 #define ACT_HANDLE(m, metric, slot) \
 	((m)->handles[(metric) * (m)->max_inst + (slot)])
 
+/* Register a scalar metric and return its PMI write handle in one call */
+int act_register_scalar_handle(struct act_metrics *m, size_t metric);
+
 /*
  ***************************************************************************
  * Helper macros for building internal PCP identifiers and structures

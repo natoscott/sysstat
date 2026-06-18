@@ -1256,6 +1256,7 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 				sigprocmask(SIG_SETMASK, &old_set, NULL);
 			}
 
+			pcp_write_uptime(record_hdr.uptime_cs);
 			if (pcp_write_sadc_sample(record_hdr.ust_time, record_hdr_ust_nsec, flags) < 0) {
 				if (WRITE_PCP_ONLY(flags))
 					exit(4);
@@ -1335,6 +1336,7 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 						continue;
 					(*act[p]->f_pcp_print)(act[p], 0);
 				}
+				pcp_write_uptime(record_hdr.uptime_cs);
 				pcp_write_sadc_sample(record_hdr.ust_time, record_hdr_ust_nsec, flags);
 			}
 #endif /* HAVE_PMI_APPEND */
