@@ -382,7 +382,7 @@ iostat.o: iostat.c iostat.h version.h common.h rd_stats.h count.h systest.h pcp_
 pcp_iostat.o: pcp_iostat.c iostat.h common.h pcp_def_metrics.h pcp_iostat.h systest.h
 
 iostat: LFLAGS += $(LFPCP_READ)
-iostat: iostat.o pcp_iostat.o pcp_def_metrics.o librdstats_light.a libsyscom.a
+iostat: iostat.o pcp_iostat.o librdstats_light.a libsyscom.a
 
 tapestat.o: tapestat.c tapestat.h version.h common.h count.h rd_stats.h systest.h pcp_tapestat.h
 
@@ -403,7 +403,7 @@ mpstat.o: mpstat.c mpstat.h version.h common.h rd_stats.h count.h systest.h pcp_
 pcp_mpstat.o: pcp_mpstat.c mpstat.h rd_stats.h common.h pcp_def_metrics.h pcp_mpstat.h systest.h
 
 mpstat: LFLAGS += $(LFPCP_READ)
-mpstat: mpstat.o pcp_mpstat.o pcp_def_metrics.o librdstats_light.a libsyscom.a
+mpstat: mpstat.o pcp_mpstat.o librdstats_light.a libsyscom.a
 
 cifsiostat.o: cifsiostat.c cifsiostat.h count.h rd_stats.h version.h common.h systest.h pcp_cifsiostat.h
 

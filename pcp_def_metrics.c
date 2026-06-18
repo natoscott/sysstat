@@ -56,6 +56,46 @@ void act_add_metric(struct activity *a, int metric)
 	pmiAddMetric(name, desc->pmid, desc->type, desc->indom, desc->sem, desc->units);
 }
 
+#ifdef HAVE_PMIEXTRAUNITS
+/*
+ ***************************************************************************
+ * Register a metric using pmiExtraUnits() for physical dimensions that
+ * the classic 6-component unit system cannot express (temperature, voltage,
+ * current, power).  The static descriptor's classic fields are taken as-is;
+ * extra_unit/extra_scale are appended via pmiExtraUnits().
+ *
+ * IN:
+ * @a		Activity structure.
+ * @metric	Metric index within the group.
+ * @extra_unit	PM_UNIT_TEMPERATURE, PM_UNIT_VOLTAGE, etc.
+ * @extra_scale	PM_TEMPERATURE_C, PM_VOLTAGE_V, etc.
+ ***************************************************************************
+ */
+static void act_add_metric_ex(struct activity *a, int metric,
+			      int extra_unit, unsigned int extra_scale)
+{
+	struct act_metrics *metrics = a->metrics;
+	const char *name;
+	pmDesc *desc;
+	pmUnits units;
+
+	if (!metrics || (size_t)metric >= metrics->count)
+		PANIC(EINVAL);
+
+	name = metrics->names[metric];
+	desc = &metrics->descs[metric];
+	units = pmiExtraUnits(desc->units.dimSpace, desc->units.dimTime,
+			      desc->units.dimCount, desc->units.scaleSpace,
+			      desc->units.scaleTime, desc->units.scaleCount,
+			      extra_unit, extra_scale);
+	pmiAddMetric(name, desc->pmid, desc->type, desc->indom, desc->sem, units);
+}
+#else
+/* Fall back to registering with zero extra units on older PCP */
+#define act_add_metric_ex(a, metric, extra_unit, extra_scale) \
+	act_add_metric((a), (metric))
+#endif /* HAVE_PMIEXTRAUNITS */
+
 /*
  ***************************************************************************
  * Insert PCP instance metadata into an archive.
@@ -4227,8 +4267,8 @@ void pcp_def_pwr_temp_metrics(struct activity *a)
 		pcp_def_pwr_temp_instances(a);
 	}
 
-	act_add_metric(a, POWER_TEMP_CELSIUS);
-	act_add_metric(a, POWER_TEMP_PERCENT);
+	act_add_metric_ex(a, POWER_TEMP_CELSIUS, PM_UNIT_TEMPERATURE, PM_TEMPERATURE_C);
+	act_add_metric(a, POWER_TEMP_PERCENT);	/* dimensionless: % of high threshold */
 	act_add_metric(a, POWER_TEMP_DEVICE);
 
 	pcp_alloc_item_list_handles(a);
@@ -4307,8 +4347,8 @@ void pcp_def_pwr_in_metrics(struct activity *a)
 		pcp_def_pwr_in_instances(a);
 	}
 
-	act_add_metric(a, POWER_IN_VOLTAGE);
-	act_add_metric(a, POWER_IN_PERCENT);
+	act_add_metric_ex(a, POWER_IN_VOLTAGE, PM_UNIT_VOLTAGE, PM_VOLTAGE_V);
+	act_add_metric(a, POWER_IN_PERCENT);	/* dimensionless: % of high threshold */
 	act_add_metric(a, POWER_IN_DEVICE);
 
 	pcp_alloc_item_list_handles(a);

@@ -172,6 +172,20 @@ if test $HAVE_PCP = "y"; then
 fi
 AC_SUBST(HAVE_PMI_APPEND)
 
+HAVE_PMIEXTRAUNITS="n"
+if test $HAVE_PCP = "y"; then
+	AC_MSG_CHECKING(for pmiExtraUnits and PM_UNIT_TEMPERATURE in pcp headers)
+	AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <pcp/pmapi.h>
+					     #include <pcp/import.h>]],
+					   [[pmUnits u = pmiExtraUnits(0,0,0,0,0,0,
+					       PM_UNIT_TEMPERATURE, PM_TEMPERATURE_C);
+					     (void)u;]])],
+		HAVE_PMIEXTRAUNITS="y"; DFPCP="$DFPCP -DHAVE_PMIEXTRAUNITS",
+		HAVE_PMIEXTRAUNITS="n")
+	AC_MSG_RESULT($HAVE_PMIEXTRAUNITS)
+fi
+AC_SUBST(HAVE_PMIEXTRAUNITS)
+
 if test $HAVE_PCP_IMPL_H; then
    PCP_IMPL="y"
 else
