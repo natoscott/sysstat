@@ -436,6 +436,7 @@ const char *file_header_metric_names[] = {
 	[FILE_HEADER_UNAME_SYSNAME] = "kernel.uname.sysname",
 	[FILE_HEADER_UNAME_MACHINE] = "kernel.uname.machine",
 	[FILE_HEADER_UNAME_NODENAME] = "kernel.uname.nodename",
+	[FILE_HEADER_UNAME_FULL]     = "pmda.uname",
 	[FILE_HEADER_BOOTTIME]       = "kernel.all.boottime",
 	[FILE_HEADER_NDISK]          = "hinv.ndisk",
 	[FILE_HEADER_NINTERFACE]     = "hinv.ninterface",
@@ -479,6 +480,13 @@ pmDesc file_header_metric_descs[] = {
 	},
 	[FILE_HEADER_UNAME_NODENAME] = {
 		.pmid = PMID_FILE_HEADER_UNAME_NODENAME,
+		.indom = PM_INDOM_NULL,
+		.units = PMI_UNITS(0, 0, 0, 0, 0, 0),
+		.type = PM_TYPE_STRING,
+		.sem = PM_SEM_DISCRETE,
+	},
+	[FILE_HEADER_UNAME_FULL] = {
+		.pmid = PMID_FILE_HEADER_UNAME_FULL,
 		.indom = PM_INDOM_NULL,
 		.units = PMI_UNITS(0, 0, 0, 0, 0, 0),
 		.type = PM_TYPE_STRING,

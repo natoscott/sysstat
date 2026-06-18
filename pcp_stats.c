@@ -24,6 +24,7 @@
 #include "sa.h"
 #include "pcp_stats.h"
 #include "pcp_def_metrics.h"
+#include "pcp_local.h"
 
 #ifdef USE_NLS
 #include <locale.h>
@@ -6091,6 +6092,16 @@ void pcp_write_file_header_metrics(const struct file_header *hdr)
 
 	atom.ul = (unsigned long) sysconf(_SC_PAGESIZE);
 	pmiPutAtomValueHandle(ACT_HANDLE(&file_header_metrics, FILE_HEADER_PAGESIZE, 0), &atom);
+
+	{
+		char uname_full[256];
+		/* pmda.uname: "sysname nodename release machine" — matches pmcd format */
+		pmsprintf(uname_full, sizeof(uname_full), "%s %s %s %s",
+			  hdr->sa_sysname, hdr->sa_nodename,
+			  hdr->sa_release, hdr->sa_machine);
+		atom.cp = uname_full;
+		pmiPutAtomValueHandle(ACT_HANDLE(&file_header_metrics, FILE_HEADER_UNAME_FULL, 0), &atom);
+	}
 }
 
 /*
@@ -6159,6 +6170,8 @@ void pcp_write_sadf_sample(unsigned long long ust_time)
  * @hdr		File header supplying timezone, hostname, and uname fields.
  ***************************************************************************
  */
+static void pcp_copy_context_labels(int local_ctx);	/* defined below */
+
 void pcp_open_sadf_archive(const char *dfile, const struct file_header *hdr)
 {
 	/* Initialise the hz global so JIFFIES_TO_MSEC works in pcp_print_* */
@@ -6168,6 +6181,7 @@ void pcp_open_sadf_archive(const char *dfile, const struct file_header *hdr)
 	pmiStart(dfile, FALSE);
 	pmiSetTimezone(hdr->sa_tzname);
 	pmiSetZoneinfo(NULL);	/* auto-detect Olson name from /etc/localtime */
+	pcp_copy_context_labels(pcp_local_get_ctx());
 	pmiSetHostname(hdr->sa_nodename);
 	pcp_write_file_header_metrics(hdr);
 	pcp_register_sadc_metrics();
@@ -6248,6 +6262,56 @@ void pcp_write_sadf_comment(const char *comment, unsigned long long ust_time)
 #ifdef HAVE_PMI_APPEND
 /*
  ***************************************************************************
+ * Copy context-level labels from a PCP context into the active PMI archive.
+ * This propagates host labels (site tags, environment identifiers, etc.)
+ * set by the system administrator into sadc-produced archives so that
+ * tools reading the archive see the same context metadata as live queries.
+ *
+ * IN:
+ * @local_ctx	PM_CONTEXT_LOCAL (or any live context) to read labels from.
+ *              Pass -1 to skip silently (local PMDA not available).
+ ***************************************************************************
+ */
+static void
+pcp_copy_context_labels(int local_ctx)
+{
+	pmLabelSet	*sets = NULL;
+	int		nsets, i, j, saved;
+
+	if (local_ctx < 0)
+		return;
+
+	saved = pmWhichContext();
+	pmUseContext(local_ctx);
+	nsets = pmGetContextLabels(&sets);
+	pmUseContext(saved);
+
+	if (nsets <= 0)
+		return;
+
+	for (i = 0; i < nsets; i++) {
+		for (j = 0; j < sets[i].nlabels; j++) {
+			pmLabel	*lp = &sets[i].labels[j];
+			const char *name  = sets[i].json + lp->name;
+			const char *value = sets[i].json + lp->value;
+			char nbuf[64], vbuf[256];
+
+			/* copy to null-terminated buffers */
+			snprintf(nbuf, sizeof(nbuf),  "%.*s", (int)lp->namelen, name);
+			snprintf(vbuf, sizeof(vbuf), "%.*s", (int)lp->valuelen, value);
+
+			/* Skip the "sadc":true label we write ourselves */
+			if (!strcmp(nbuf, "sadc"))
+				continue;
+
+			pmiPutLabel(PM_LABEL_CONTEXT, 0, 0, nbuf, vbuf);
+		}
+	}
+	pmFreeLabelSets(sets, nsets);
+}
+
+/*
+ ***************************************************************************
  * Open a PCP archive for sadc direct-write mode.  Returns the pmiStart
  * status so the caller can handle failure (fall back to native .sa only).
  *
@@ -6269,6 +6333,7 @@ int pcp_open_sadc_archive(const char *path, const struct file_header *hdr)
 	pmiSetHostname(hdr->sa_nodename);
 	pmiSetTimezone(hdr->sa_tzname);
 	pmiSetZoneinfo(NULL);	/* auto-detect Olson name from /etc/localtime */
+	pcp_copy_context_labels(pcp_local_get_ctx());
 	return sts;
 }
 
