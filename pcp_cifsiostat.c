@@ -160,14 +160,12 @@ pcp_cifsiostat_run(const char *archive)
 		return 1;
 	}
 
-	/* Look up metric PMIDs by name; skip unavailable ones */
-	for (m = 0; m < PCP_CIFS_NR; m++) {
-		const char *np = pcp_cifs_names[m];
+	/* Batch name→PMID lookup in one round-trip; filter absent metrics */
+	pmLookupName(PCP_CIFS_NR, pcp_cifs_names, pcp_cifs_pmids);
 
-		if (pmLookupName(1, &np, &pcp_cifs_pmids[m]) >= 0)
+	for (m = 0; m < PCP_CIFS_NR; m++) {
+		if (pcp_cifs_pmids[m] != PM_ID_NULL)
 			fetch_pmids[fetch_nr++] = pcp_cifs_pmids[m];
-		else
-			pcp_cifs_pmids[m] = PM_ID_NULL;
 	}
 
 	if (!fetch_nr) {

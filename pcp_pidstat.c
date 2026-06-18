@@ -570,20 +570,11 @@ pcp_pidstat_run(const char *archive)
 		return 1;
 	}
 
-	/* Look up all PMIDs; skip gracefully if a metric is absent */
-	for (m = 0; m < PCP_PID_NR; m++) {
-		const char *np = pcp_pid_metric_names[m];
-
-		sts = pmLookupName(1, &np, &pcp_pid_pmids[m]);
-		if (sts < 0) {
-			pcp_pid_pmids[m] = PM_ID_NULL;
-			continue;
-		}
-		pmLookupDesc(pcp_pid_pmids[m], &pcp_pid_descs[m]);
-	}
+	/* Batch name→PMID and PMID→descriptor lookups in two round-trips */
+	pmLookupName(PCP_PID_NR, pcp_pid_metric_names, pcp_pid_pmids);
+	pmLookupDescs(PCP_PID_NR, pcp_pid_pmids, pcp_pid_descs);
 
 	/* Filter out any absent metrics from the fetch list */
-
 	for (m = 0; m < PCP_PID_NR; m++) {
 		if (pcp_pid_pmids[m] != PM_ID_NULL)
 			fetch_pmids[fetch_nr++] = pcp_pid_pmids[m];
