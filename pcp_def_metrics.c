@@ -1313,16 +1313,18 @@ void pcp_def_irq_metrics(struct activity *a)
 		/* CPU "all" not selected: Nothing to do here */
 		return;
 
+	/*
+	 * Always register the total interrupt count (kernel.all.intr): sadc
+	 * collects it from /proc/stat regardless of whether a per-interrupt
+	 * filter has been requested on the command line.
+	 */
+	act_add_metric(a, IRQ_ALLIRQ_TOTAL);
+
 	/* Create instances and metrics for each interrupts for CPU "all" */
 	for (list = a->item_list; list != NULL; list = list->next) {
 
 		if (!strcmp(list->item_name, K_LOWERSUM)) {
-			/*
-			 * Create metric for interrupt "sum" for CPU "all".
-			 * Interrupt "sum" appears at most once in list.
-			 * No need to create an instance for it: It has a specific metric name.
-			 */
-			act_add_metric(a, IRQ_ALLIRQ_TOTAL);
+			/* "sum" already registered above; skip duplicate */
 		}
 		else {
 			if (first) {
