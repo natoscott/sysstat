@@ -1948,11 +1948,8 @@ void pcp_def_disk_metrics(struct activity *a)
 		pcp_def_perdisk_instances(a);
 	}
 
-	/* DISK_PERDEV_READ / DISK_PERDEV_WRITE (disk.dev.read / disk.dev.write)
-	 * are not registered: stats_disk tracks only total IOs (nr_ios), not
-	 * separate read/write operation counts, so we have no data for them.
-	 * PCP's derived metrics that reference disk.dev.read will warn; those
-	 * definitions should use defined() guards. */
+	act_add_metric(a, DISK_PERDEV_READ);
+	act_add_metric(a, DISK_PERDEV_WRITE);
 	act_add_metric(a, DISK_PERDEV_TOTAL);
 	act_add_metric(a, DISK_PERDEV_TOTALBYTES);
 	act_add_metric(a, DISK_PERDEV_READBYTES);

@@ -1490,6 +1490,14 @@ __print_funct_t pcp_print_disk_stats(struct activity *a, int curr)
 		}
 		slot = pcp_slot_for_item(a->item_list, dev_name);
 
+		handle = ACT_HANDLE(m, DISK_PERDEV_READ, slot);
+		atom.ull = sdc->rd_ios;
+		pmiPutAtomValueHandle(handle, &atom);
+
+		handle = ACT_HANDLE(m, DISK_PERDEV_WRITE, slot);
+		atom.ull = sdc->wr_ios;
+		pmiPutAtomValueHandle(handle, &atom);
+
 		handle = ACT_HANDLE(m, DISK_PERDEV_TOTAL, slot);
 		atom.ull = (unsigned long long) sdc->nr_ios;
 		pmiPutAtomValueHandle(handle, &atom);
