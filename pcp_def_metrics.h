@@ -526,6 +526,89 @@ extern struct act_metrics disk_metrics;
 
 /*
  ***************************************************************************
+ * Shared metric indices for secondary disk classes (dm/md/partitions/zram)
+ ***************************************************************************
+ */
+enum {
+	DCLASS_READ,		/* read operations */
+	DCLASS_WRITE,		/* write operations */
+	DCLASS_TOTAL,		/* total I/Os */
+	DCLASS_READBYTES,	/* kB read */
+	DCLASS_WRITEBYTES,	/* kB written */
+	DCLASS_TOTALBYTES,	/* kB total */
+	DCLASS_DISCBYTES,	/* kB discarded */
+	DCLASS_READ_MERGE,	/* read merges */
+	DCLASS_WRITE_MERGE,	/* write merges */
+	DCLASS_AVACTIVE,	/* avactive ms */
+	DCLASS_AVEQ,		/* aveq ms */
+	DCLASS_RD_ACTIVE,	/* read rawactive ms */
+	DCLASS_WR_ACTIVE,	/* write rawactive ms */
+	DCLASS_TOTALACTIVE,	/* total rawactive ms */
+	DCLASS_DISCARDACTIVE,	/* discard rawactive ms */
+	DCLASS_BLKREAD,		/* sectors read */
+	DCLASS_BLKWRITE,	/* sectors written */
+	DCLASS_DISCARD,		/* discard operations */
+	DCLASS_METRIC_COUNT	/* end */
+};
+
+/* Shared item numbers within each secondary disk cluster */
+#define DCLASS_ITEM_READ		0
+#define DCLASS_ITEM_WRITE		1
+#define DCLASS_ITEM_TOTAL		2
+#define DCLASS_ITEM_BLKREAD		3
+#define DCLASS_ITEM_BLKWRITE		4
+#define DCLASS_ITEM_READBYTES		6
+#define DCLASS_ITEM_WRITEBYTES		7
+#define DCLASS_ITEM_TOTALBYTES		8
+#define DCLASS_ITEM_READ_MERGE		9
+#define DCLASS_ITEM_WRITE_MERGE		10
+#define DCLASS_ITEM_AVACTIVE		11
+#define DCLASS_ITEM_AVEQ		12
+#define DCLASS_ITEM_RD_ACTIVE		13
+#define DCLASS_ITEM_WR_ACTIVE		14
+#define DCLASS_ITEM_TOTALACTIVE		16
+#define DCLASS_ITEM_DISCARD		18
+#define DCLASS_ITEM_DISCBYTES		20
+#define DCLASS_ITEM_DISCARDACTIVE	22
+
+#define DCLASS_CLUSTER_DM		54
+#define DCLASS_CLUSTER_MD		59
+#define DCLASS_CLUSTER_PART		10
+#define DCLASS_CLUSTER_ZRAM		86
+
+#define DCLASS_INDOM_DM			PMI_INDOM(60, 24)
+#define DCLASS_INDOM_MD			PMI_INDOM(60, 25)
+#define DCLASS_INDOM_PART		PMI_INDOM(60, 10)
+#define DCLASS_INDOM_ZRAM		PMI_INDOM(60, 38)
+
+/* Classification helpers — implemented in pcp_def_metrics.c */
+int is_dm_device(const char *name);
+int is_md_device(const char *name);
+int is_zram_device(const char *name);
+int is_part_device(const char *name);
+void dm_persistent_name(const char *kernel_name, unsigned int dmajor,
+			unsigned int dminor, char *out, size_t len);
+
+/* Per-class item lists and metrics (extern for pcp_stats.c) */
+extern struct sa_item *dm_item_list;
+extern struct sa_item *md_item_list;
+extern struct sa_item *part_item_list;
+extern struct sa_item *zram_item_list;
+extern struct act_metrics dm_metrics;
+extern struct act_metrics md_metrics;
+extern struct act_metrics part_metrics;
+extern struct act_metrics zram_metrics;
+
+void pcp_def_disk_class_metrics(struct act_metrics *m, struct sa_item *ilist,
+				int cluster, pmInDom indom,
+				const char *prefix);
+void pcp_probe_dm_instances(struct activity *a);
+void pcp_probe_md_instances(struct activity *a);
+void pcp_probe_part_instances(struct activity *a);
+void pcp_probe_zram_instances(struct activity *a);
+
+/*
+ ***************************************************************************
  * Network interface metric grouping
  ***************************************************************************
  */

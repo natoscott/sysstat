@@ -20,6 +20,11 @@
  ***************************************************************************
  */
 
+#include <ctype.h>
+#include <dirent.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include "sa.h"
 
 #ifdef HAVE_PCP
@@ -33,6 +38,120 @@
 
 extern struct activity *act[];
 extern uint64_t flags;
+
+/*
+ ***************************************************************************
+ * Device classification helpers for secondary disk classes.
+ *
+ * IN:
+ * @name	Kernel device name (as returned by get_device_name).
+ *
+ * RETURNS:
+ * Non-zero if the device belongs to the indicated class.
+ ***************************************************************************
+ */
+int is_dm_device(const char *name)
+{
+	return strncmp(name, "dm-", 3) == 0;
+}
+
+int is_md_device(const char *name)
+{
+	return strncmp(name, "md", 2) == 0 && isdigit((unsigned char)name[2]);
+}
+
+int is_zram_device(const char *name)
+{
+	return strncmp(name, "zram", 4) == 0;
+}
+
+int is_part_device(const char *name)
+{
+	size_t n = strlen(name);
+
+	return n > 0 && isdigit((unsigned char)name[n - 1]) &&
+	       !is_dm_device(name) && !is_md_device(name) &&
+	       !is_zram_device(name);
+}
+
+/*
+ ***************************************************************************
+ * Resolve the persistent (human-readable) name for a dm device.
+ *
+ * Tries /sys/block/<kernel_name>/dm/name first, then walks /dev/mapper
+ * matching by major:minor, and falls back to the kernel name.
+ *
+ * IN:
+ * @kernel_name	Kernel block device name (e.g. "dm-0").
+ * @major	Device major number.
+ * @minor	Device minor number.
+ * @out		Output buffer.
+ * @len		Size of output buffer.
+ ***************************************************************************
+ */
+void dm_persistent_name(const char *kernel_name, unsigned int dmajor,
+			unsigned int dminor, char *out, size_t len)
+{
+	char path[512];
+	int fd;
+	ssize_t n;
+	DIR *dp;
+	struct dirent *de;
+	struct stat sb;
+
+	/* Try /sys/block/dm-X/dm/name first */
+	pmsprintf(path, sizeof(path), "/sys/block/%s/dm/name", kernel_name);
+	fd = open(path, O_RDONLY);
+	if (fd >= 0) {
+		n = read(fd, out, len - 1);
+		close(fd);
+		if (n > 0) {
+			out[n] = '\0';
+			/* strip trailing newline */
+			if (n > 0 && out[n - 1] == '\n')
+				out[n - 1] = '\0';
+			return;
+		}
+	}
+
+	/* Fallback: walk /dev/mapper matching by major:minor */
+	pmsprintf(path, sizeof(path), "/dev/mapper");
+	dp = opendir(path);
+	if (dp) {
+		while ((de = readdir(dp)) != NULL) {
+			char fpath[512];
+
+			pmsprintf(fpath, sizeof(fpath), "/dev/mapper/%s", de->d_name);
+			if (stat(fpath, &sb) == 0 &&
+			    (unsigned int)major(sb.st_rdev) == dmajor &&
+			    (unsigned int)minor(sb.st_rdev) == dminor) {
+				strncpy(out, de->d_name, len - 1);
+				out[len - 1] = '\0';
+				closedir(dp);
+				return;
+			}
+		}
+		closedir(dp);
+	}
+
+	/* Last resort: use kernel name */
+	strncpy(out, kernel_name, len - 1);
+	out[len - 1] = '\0';
+}
+
+/*
+ * Per-class item lists and their sizes.
+ * Populated by pcp_probe_*_instances(); used by pcp_def_disk_class_metrics()
+ * and pcp_print_disk_stats().
+ */
+struct sa_item *dm_item_list;
+size_t dm_item_list_sz;
+struct sa_item *md_item_list;
+size_t md_item_list_sz;
+struct sa_item *part_item_list;
+size_t part_item_list_sz;
+struct sa_item *zram_item_list;
+size_t zram_item_list_sz;
 
 /*
  ***************************************************************************
@@ -1991,10 +2110,15 @@ void pcp_probe_disk_instances(struct activity *a)
 					   DISPLAY_PRETTY(flags),
 					   DISPLAY_PERSIST_NAME_S(flags),
 					   USE_STABLE_ID(flags), NULL);
-		if (dev_name && dev_name[0])
-			a->item_list_sz += add_list_item(&a->item_list,
-							 dev_name,
-							 MAX_DEV_LEN, NULL);
+		if (!dev_name || !dev_name[0])
+			continue;
+		/* Skip secondary device classes; they have their own item_lists */
+		if (is_dm_device(dev_name) || is_md_device(dev_name) ||
+		    is_zram_device(dev_name) || is_part_device(dev_name))
+			continue;
+		a->item_list_sz += add_list_item(&a->item_list,
+						 dev_name,
+						 MAX_DEV_LEN, NULL);
 	}
 }
 
@@ -2012,7 +2136,7 @@ void pcp_def_disk_metrics(struct activity *a)
 
 	if (!setup) {
 		setup = 1;
-		/* Create instances */
+		/* Create instances for disk.dev (primary class only) */
 		pcp_def_perdisk_instances(a);
 	}
 
@@ -2034,6 +2158,20 @@ void pcp_def_disk_metrics(struct activity *a)
 	act_add_metric(a, DISK_PERDEV_DISCARD);
 
 	pcp_alloc_item_list_handles(a);
+
+	/* Register secondary disk device class metrics */
+	pcp_def_disk_class_metrics(&dm_metrics, dm_item_list,
+				   DCLASS_CLUSTER_DM, DCLASS_INDOM_DM,
+				   "disk.dm");
+	pcp_def_disk_class_metrics(&md_metrics, md_item_list,
+				   DCLASS_CLUSTER_MD, DCLASS_INDOM_MD,
+				   "disk.md");
+	pcp_def_disk_class_metrics(&part_metrics, part_item_list,
+				   DCLASS_CLUSTER_PART, DCLASS_INDOM_PART,
+				   "disk.partitions");
+	pcp_def_disk_class_metrics(&zram_metrics, zram_item_list,
+				   DCLASS_CLUSTER_ZRAM, DCLASS_INDOM_ZRAM,
+				   "zram");
 }
 
 const char *disk_metric_names[] = {
@@ -2177,6 +2315,344 @@ struct act_metrics disk_metrics = {
 	.pmids = disk_metric_pmids,
 };
 
+/*
+ * Static metric name/desc/pmid arrays for secondary disk device classes.
+ * Each class (dm, md, partitions, zram) has DCLASS_METRIC_COUNT metrics.
+ * The metric name strings are built into per-class char arrays by
+ * pcp_def_disk_class_metrics().
+ */
+static char dm_metric_name_bufs[DCLASS_METRIC_COUNT][64];
+static const char *dm_metric_names[DCLASS_METRIC_COUNT];
+static pmDesc dm_metric_descs[DCLASS_METRIC_COUNT];
+static pmID dm_metric_pmids[DCLASS_METRIC_COUNT];
+struct act_metrics dm_metrics = {
+	.count = DCLASS_METRIC_COUNT,
+	.descs = dm_metric_descs,
+	.names = dm_metric_names,
+	.pmids = dm_metric_pmids,
+};
+
+static char md_metric_name_bufs[DCLASS_METRIC_COUNT][64];
+static const char *md_metric_names[DCLASS_METRIC_COUNT];
+static pmDesc md_metric_descs[DCLASS_METRIC_COUNT];
+static pmID md_metric_pmids[DCLASS_METRIC_COUNT];
+struct act_metrics md_metrics = {
+	.count = DCLASS_METRIC_COUNT,
+	.descs = md_metric_descs,
+	.names = md_metric_names,
+	.pmids = md_metric_pmids,
+};
+
+static char part_metric_name_bufs[DCLASS_METRIC_COUNT][64];
+static const char *part_metric_names[DCLASS_METRIC_COUNT];
+static pmDesc part_metric_descs[DCLASS_METRIC_COUNT];
+static pmID part_metric_pmids[DCLASS_METRIC_COUNT];
+struct act_metrics part_metrics = {
+	.count = DCLASS_METRIC_COUNT,
+	.descs = part_metric_descs,
+	.names = part_metric_names,
+	.pmids = part_metric_pmids,
+};
+
+static char zram_metric_name_bufs[DCLASS_METRIC_COUNT][64];
+static const char *zram_metric_names[DCLASS_METRIC_COUNT];
+static pmDesc zram_metric_descs[DCLASS_METRIC_COUNT];
+static pmID zram_metric_pmids[DCLASS_METRIC_COUNT];
+struct act_metrics zram_metrics = {
+	.count = DCLASS_METRIC_COUNT,
+	.descs = zram_metric_descs,
+	.names = zram_metric_names,
+	.pmids = zram_metric_pmids,
+};
+
+/*
+ * Mapping from DCLASS_* enum indices to PCP item numbers within a cluster.
+ * These are the same for all four secondary disk clusters.
+ */
+static const int dclass_items[DCLASS_METRIC_COUNT] = {
+	[DCLASS_READ]		= DCLASS_ITEM_READ,
+	[DCLASS_WRITE]		= DCLASS_ITEM_WRITE,
+	[DCLASS_TOTAL]		= DCLASS_ITEM_TOTAL,
+	[DCLASS_READBYTES]	= DCLASS_ITEM_READBYTES,
+	[DCLASS_WRITEBYTES]	= DCLASS_ITEM_WRITEBYTES,
+	[DCLASS_TOTALBYTES]	= DCLASS_ITEM_TOTALBYTES,
+	[DCLASS_DISCBYTES]	= DCLASS_ITEM_DISCBYTES,
+	[DCLASS_READ_MERGE]	= DCLASS_ITEM_READ_MERGE,
+	[DCLASS_WRITE_MERGE]	= DCLASS_ITEM_WRITE_MERGE,
+	[DCLASS_AVACTIVE]	= DCLASS_ITEM_AVACTIVE,
+	[DCLASS_AVEQ]		= DCLASS_ITEM_AVEQ,
+	[DCLASS_RD_ACTIVE]	= DCLASS_ITEM_RD_ACTIVE,
+	[DCLASS_WR_ACTIVE]	= DCLASS_ITEM_WR_ACTIVE,
+	[DCLASS_TOTALACTIVE]	= DCLASS_ITEM_TOTALACTIVE,
+	[DCLASS_DISCARDACTIVE]	= DCLASS_ITEM_DISCARDACTIVE,
+	[DCLASS_BLKREAD]	= DCLASS_ITEM_BLKREAD,
+	[DCLASS_BLKWRITE]	= DCLASS_ITEM_BLKWRITE,
+	[DCLASS_DISCARD]	= DCLASS_ITEM_DISCARD,
+};
+
+/*
+ * Human-readable metric name suffixes shared by all secondary disk classes.
+ * The full metric name is "<prefix>.<suffix>" (e.g. "disk.dm.read").
+ */
+static const char * const dclass_suffixes[DCLASS_METRIC_COUNT] = {
+	[DCLASS_READ]		= "read",
+	[DCLASS_WRITE]		= "write",
+	[DCLASS_TOTAL]		= "total",
+	[DCLASS_READBYTES]	= "read_bytes",
+	[DCLASS_WRITEBYTES]	= "write_bytes",
+	[DCLASS_TOTALBYTES]	= "total_bytes",
+	[DCLASS_DISCBYTES]	= "discard_bytes",
+	[DCLASS_READ_MERGE]	= "read_merge",
+	[DCLASS_WRITE_MERGE]	= "write_merge",
+	[DCLASS_AVACTIVE]	= "avactive",
+	[DCLASS_AVEQ]		= "aveq",
+	[DCLASS_RD_ACTIVE]	= "read_rawactive",
+	[DCLASS_WR_ACTIVE]	= "write_rawactive",
+	[DCLASS_TOTALACTIVE]	= "total_rawactive",
+	[DCLASS_DISCARDACTIVE]	= "discard_rawactive",
+	[DCLASS_BLKREAD]	= "blkread",
+	[DCLASS_BLKWRITE]	= "blkwrite",
+	[DCLASS_DISCARD]	= "discard",
+};
+
+/*
+ ***************************************************************************
+ * Probe for dm device instances from buf[0] and populate dm_item_list.
+ *
+ * IN:
+ * @a		Activity structure with disk statistics in buf[0].
+ ***************************************************************************
+ */
+void pcp_probe_dm_instances(struct activity *a)
+{
+	int i;
+	struct stats_disk *sdc;
+	char *dev_name;
+	char name[MAX_NAME_LEN];
+
+	if (dm_item_list != NULL)
+		return;
+
+	for (i = 0; i < a->_nr0; i++) {
+		sdc = (struct stats_disk *)((char *)a->_buf0 + i * a->msize);
+		dev_name = get_device_name(sdc->major, sdc->minor, sdc->wwn,
+					   sdc->part_nr, FALSE, FALSE, FALSE, NULL);
+		if (!dev_name || !is_dm_device(dev_name))
+			continue;
+		dm_persistent_name(dev_name, sdc->major, sdc->minor,
+				   name, sizeof(name));
+		dm_item_list_sz += add_list_item(&dm_item_list, name,
+						 MAX_NAME_LEN, NULL);
+	}
+}
+
+/*
+ ***************************************************************************
+ * Probe for md device instances from buf[0] and populate md_item_list.
+ *
+ * IN:
+ * @a		Activity structure with disk statistics in buf[0].
+ ***************************************************************************
+ */
+void pcp_probe_md_instances(struct activity *a)
+{
+	int i;
+	struct stats_disk *sdc;
+	char *dev_name;
+
+	if (md_item_list != NULL)
+		return;
+
+	for (i = 0; i < a->_nr0; i++) {
+		sdc = (struct stats_disk *)((char *)a->_buf0 + i * a->msize);
+		dev_name = get_device_name(sdc->major, sdc->minor, sdc->wwn,
+					   sdc->part_nr, FALSE, FALSE, FALSE, NULL);
+		if (!dev_name || !is_md_device(dev_name))
+			continue;
+		md_item_list_sz += add_list_item(&md_item_list, dev_name,
+						 MAX_NAME_LEN, NULL);
+	}
+}
+
+/*
+ ***************************************************************************
+ * Probe for partition device instances from buf[0] and populate
+ * part_item_list.
+ *
+ * IN:
+ * @a		Activity structure with disk statistics in buf[0].
+ ***************************************************************************
+ */
+void pcp_probe_part_instances(struct activity *a)
+{
+	int i;
+	struct stats_disk *sdc;
+	char *dev_name;
+
+	if (part_item_list != NULL)
+		return;
+
+	for (i = 0; i < a->_nr0; i++) {
+		sdc = (struct stats_disk *)((char *)a->_buf0 + i * a->msize);
+		dev_name = get_device_name(sdc->major, sdc->minor, sdc->wwn,
+					   sdc->part_nr, FALSE, FALSE, FALSE, NULL);
+		if (!dev_name || !is_part_device(dev_name))
+			continue;
+		part_item_list_sz += add_list_item(&part_item_list, dev_name,
+						   MAX_NAME_LEN, NULL);
+	}
+}
+
+/*
+ ***************************************************************************
+ * Probe for zram device instances from buf[0] and populate zram_item_list.
+ *
+ * IN:
+ * @a		Activity structure with disk statistics in buf[0].
+ ***************************************************************************
+ */
+void pcp_probe_zram_instances(struct activity *a)
+{
+	int i;
+	struct stats_disk *sdc;
+	char *dev_name;
+
+	if (zram_item_list != NULL)
+		return;
+
+	for (i = 0; i < a->_nr0; i++) {
+		sdc = (struct stats_disk *)((char *)a->_buf0 + i * a->msize);
+		dev_name = get_device_name(sdc->major, sdc->minor, sdc->wwn,
+					   sdc->part_nr, FALSE, FALSE, FALSE, NULL);
+		if (!dev_name || !is_zram_device(dev_name))
+			continue;
+		zram_item_list_sz += add_list_item(&zram_item_list, dev_name,
+						   MAX_NAME_LEN, NULL);
+	}
+}
+
+/*
+ ***************************************************************************
+ * Register PCP metric descriptors and instance names for one secondary
+ * disk device class (dm, md, partitions, or zram).  Fills in the names[],
+ * descs[], and handles[] of the supplied act_metrics struct.
+ *
+ * Must be called after the class probe (pcp_probe_*_instances) has run
+ * and after the PCP archive write context is open.
+ *
+ * IN:
+ * @m		act_metrics struct for this class (dm_metrics, md_metrics, …).
+ * @ilist	item_list for this class (dm_item_list, md_item_list, …).
+ * @cluster	PCP cluster number for this class.
+ * @indom	PCP instance domain for this class.
+ * @prefix	Metric name prefix (e.g. "disk.dm", "disk.md").
+ ***************************************************************************
+ */
+void pcp_def_disk_class_metrics(struct act_metrics *m, struct sa_item *ilist,
+				int cluster, pmInDom indom,
+				const char *prefix)
+{
+	struct sa_item *list;
+	char (*namebuf)[64];
+	size_t metric, slot;
+	int inst, n_inst;
+	int local, saved;
+	char *text;
+
+	/*
+	 * Point namebuf at the per-class static storage embedded in the
+	 * act_metrics names array.  Each class has its own DCLASS_METRIC_COUNT
+	 * x 64 char buffer so successive calls do not overwrite each other.
+	 * The mapping is: dm -> dm_metric_name_bufs, md -> md_metric_name_bufs,
+	 * part -> part_metric_name_bufs, zram -> zram_metric_name_bufs.
+	 * We identify the class by which pmids array is in use.
+	 */
+	if (m->pmids == dm_metric_pmids)
+		namebuf = dm_metric_name_bufs;
+	else if (m->pmids == md_metric_pmids)
+		namebuf = md_metric_name_bufs;
+	else if (m->pmids == part_metric_pmids)
+		namebuf = part_metric_name_bufs;
+	else
+		namebuf = zram_metric_name_bufs;
+
+	/* Build metric name strings and descriptors */
+	for (metric = 0; metric < DCLASS_METRIC_COUNT; metric++) {
+		pmsprintf(namebuf[metric], 64, "%s.%s", prefix, dclass_suffixes[metric]);
+		m->names[metric] = namebuf[metric];
+
+		m->descs[metric].pmid  = PMI_ID(60, cluster, dclass_items[metric]);
+		m->descs[metric].indom = indom;
+		m->descs[metric].sem   = PM_SEM_COUNTER;
+
+		/* time-dimensioned metrics */
+		if (metric == DCLASS_AVACTIVE || metric == DCLASS_AVEQ ||
+		    metric == DCLASS_RD_ACTIVE || metric == DCLASS_WR_ACTIVE ||
+		    metric == DCLASS_TOTALACTIVE || metric == DCLASS_DISCARDACTIVE) {
+			m->descs[metric].type  = PM_TYPE_U32;
+			m->descs[metric].units = PMI_UNITS(0, 1, 0, 0, PM_TIME_MSEC, 0);
+		}
+		/* byte-dimensioned metrics */
+		else if (metric == DCLASS_READBYTES || metric == DCLASS_WRITEBYTES ||
+			 metric == DCLASS_TOTALBYTES || metric == DCLASS_DISCBYTES) {
+			m->descs[metric].type  = PM_TYPE_U64;
+			m->descs[metric].units = PMI_UNITS(1, 0, 0, PM_SPACE_KBYTE, 0, 0);
+		}
+		/* count-dimensioned metrics (default) */
+		else {
+			m->descs[metric].type  = PM_TYPE_U64;
+			m->descs[metric].units = PMI_UNITS(0, 0, 1, 0, 0, PM_COUNT_ONE);
+		}
+
+		/* Register the metric in the archive */
+		pmiAddMetric(m->names[metric],
+			     m->descs[metric].pmid,
+			     m->descs[metric].type,
+			     m->descs[metric].indom,
+			     m->descs[metric].sem,
+			     m->descs[metric].units);
+
+		/* Copy help text from the local DSO PMDA if available */
+		local = pcp_local_get_ctx();
+		if (local >= 0) {
+			saved = pmWhichContext();
+			pmUseContext(local);
+			if (pmLookupText(m->descs[metric].pmid,
+					 PM_TEXT_ONELINE, &text) >= 0) {
+				pmUseContext(saved);
+				pmiPutText(PM_TEXT_PMID, PM_TEXT_ONELINE,
+					   m->descs[metric].pmid, text);
+				pmUseContext(local);
+				free(text);
+			}
+			if (pmLookupText(m->descs[metric].pmid,
+					 PM_TEXT_HELP, &text) >= 0) {
+				pmUseContext(saved);
+				pmiPutText(PM_TEXT_PMID, PM_TEXT_HELP,
+					   m->descs[metric].pmid, text);
+				pmUseContext(local);
+				free(text);
+			}
+			pmUseContext(saved);
+		}
+	}
+
+	/* Register instances */
+	inst = 0;
+	for (list = ilist; list != NULL; list = list->next)
+		pmiAddInstance(indom, list->item_name, inst++);
+
+	/* Allocate write handles */
+	n_inst = 0;
+	for (list = ilist; list != NULL; list = list->next)
+		n_inst++;
+	pcp_alloc_handles(m, (size_t)(n_inst > 0 ? n_inst : 1));
+	for (slot = 0, list = ilist; list != NULL; list = list->next, slot++) {
+		for (metric = 0; metric < DCLASS_METRIC_COUNT; metric++)
+			pcp_alloc_handle(m, metric, slot, (int)slot,
+					 list->item_name);
+	}
+}
 
 /*
  ***************************************************************************
@@ -5208,6 +5684,10 @@ void pcp_def_memory_metrics(struct activity *a) {}
 void pcp_def_ktables_metrics(struct activity *a) {}
 void pcp_def_queue_metrics(struct activity *a) {}
 void pcp_def_disk_metrics(struct activity *a) {}
+void pcp_probe_dm_instances(struct activity *a) {}
+void pcp_probe_md_instances(struct activity *a) {}
+void pcp_probe_part_instances(struct activity *a) {}
+void pcp_probe_zram_instances(struct activity *a) {}
 void pcp_def_net_dev_metrics(struct activity *a) {}
 void pcp_def_serial_metrics(struct activity *a) {}
 void pcp_def_net_nfs_metrics(struct activity *a) {}

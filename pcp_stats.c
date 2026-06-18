@@ -1479,12 +1479,15 @@ void pcp_read_kqueue_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_disk_stats(struct activity *a, int curr)
 {
-	struct act_metrics *m = a->metrics;
+	struct act_metrics *cm;
+	struct sa_item *ilist;
 	pmAtomValue atom;
 	size_t slot;
 	int i, handle;
 	struct stats_disk *sdc;
 	char *dev_name;
+	char dm_name[MAX_NAME_LEN];
+	const char *eff_name;
 
 	for (i = 0; i < a->nr[curr]; i++) {
 
@@ -1495,77 +1498,175 @@ __print_funct_t pcp_print_disk_stats(struct activity *a, int curr)
 					   DISPLAY_PRETTY(flags), DISPLAY_PERSIST_NAME_S(flags),
 					   USE_STABLE_ID(flags), NULL);
 
-		if (a->item_list != NULL) {
-			/* A list of devices has been entered on the command line */
-			if (!search_list_item(a->item_list, dev_name))
-				/* Device not found */
+		/* Route to the correct metrics group and item_list */
+		if (is_dm_device(dev_name)) {
+			dm_persistent_name(dev_name, sdc->major, sdc->minor,
+					   dm_name, sizeof(dm_name));
+			eff_name = dm_name;
+			cm    = &dm_metrics;
+			ilist = dm_item_list;
+		}
+		else if (is_md_device(dev_name)) {
+			eff_name = dev_name;
+			cm    = &md_metrics;
+			ilist = md_item_list;
+		}
+		else if (is_zram_device(dev_name)) {
+			eff_name = dev_name;
+			cm    = &zram_metrics;
+			ilist = zram_item_list;
+		}
+		else if (is_part_device(dev_name)) {
+			eff_name = dev_name;
+			cm    = &part_metrics;
+			ilist = part_item_list;
+		}
+		else {
+			/* Primary disk.dev class */
+			eff_name = dev_name;
+			cm    = a->metrics;
+			ilist = a->item_list;
+		}
+
+		if (ilist != NULL) {
+			/* item_list was populated — check the device is in it */
+			if (!search_list_item(ilist, (char *)eff_name))
 				continue;
 		}
-		slot = pcp_slot_for_item(a->item_list, dev_name);
+		slot = pcp_slot_for_item(ilist, eff_name);
 
-		handle = ACT_HANDLE(m, DISK_PERDEV_READ, slot);
-		atom.ull = sdc->rd_ios;
-		pmiPutAtomValueHandle(handle, &atom);
+		if (cm == a->metrics) {
+			/* Primary class: use DISK_PERDEV_* indices */
+			handle = ACT_HANDLE(cm, DISK_PERDEV_READ, slot);
+			atom.ull = sdc->rd_ios;
+			pmiPutAtomValueHandle(handle, &atom);
 
-		handle = ACT_HANDLE(m, DISK_PERDEV_WRITE, slot);
-		atom.ull = sdc->wr_ios;
-		pmiPutAtomValueHandle(handle, &atom);
+			handle = ACT_HANDLE(cm, DISK_PERDEV_WRITE, slot);
+			atom.ull = sdc->wr_ios;
+			pmiPutAtomValueHandle(handle, &atom);
 
-		handle = ACT_HANDLE(m, DISK_PERDEV_TOTAL, slot);
-		atom.ull = (unsigned long long) sdc->nr_ios;
-		pmiPutAtomValueHandle(handle, &atom);
+			handle = ACT_HANDLE(cm, DISK_PERDEV_TOTAL, slot);
+			atom.ull = (unsigned long long) sdc->nr_ios;
+			pmiPutAtomValueHandle(handle, &atom);
 
-		handle = ACT_HANDLE(m, DISK_PERDEV_TOTALBYTES, slot);
-		atom.ull = (unsigned long long) (sdc->rd_sect + sdc->wr_sect) / 2;
-		pmiPutAtomValueHandle(handle, &atom);
+			handle = ACT_HANDLE(cm, DISK_PERDEV_TOTALBYTES, slot);
+			atom.ull = (unsigned long long) (sdc->rd_sect + sdc->wr_sect) / 2;
+			pmiPutAtomValueHandle(handle, &atom);
 
-		handle = ACT_HANDLE(m, DISK_PERDEV_READBYTES, slot);
-		atom.ull = (unsigned long long) sdc->rd_sect / 2;
-		pmiPutAtomValueHandle(handle, &atom);
+			handle = ACT_HANDLE(cm, DISK_PERDEV_READBYTES, slot);
+			atom.ull = (unsigned long long) sdc->rd_sect / 2;
+			pmiPutAtomValueHandle(handle, &atom);
 
-		handle = ACT_HANDLE(m, DISK_PERDEV_WRITEBYTES, slot);
-		atom.ull = (unsigned long long) sdc->wr_sect / 2;
-		pmiPutAtomValueHandle(handle, &atom);
+			handle = ACT_HANDLE(cm, DISK_PERDEV_WRITEBYTES, slot);
+			atom.ull = (unsigned long long) sdc->wr_sect / 2;
+			pmiPutAtomValueHandle(handle, &atom);
 
-		handle = ACT_HANDLE(m, DISK_PERDEV_DISCARDBYTES, slot);
-		atom.ull = (unsigned long long) sdc->dc_sect / 2;
-		pmiPutAtomValueHandle(handle, &atom);
+			handle = ACT_HANDLE(cm, DISK_PERDEV_DISCARDBYTES, slot);
+			atom.ull = (unsigned long long) sdc->dc_sect / 2;
+			pmiPutAtomValueHandle(handle, &atom);
 
-		handle = ACT_HANDLE(m, DISK_PERDEV_TOTALACTIVE, slot);
-		atom.ul = (unsigned long) sdc->rd_ticks + sdc->wr_ticks;
-		pmiPutAtomValueHandle(handle, &atom);
+			handle = ACT_HANDLE(cm, DISK_PERDEV_TOTALACTIVE, slot);
+			atom.ul = (unsigned long) sdc->rd_ticks + sdc->wr_ticks;
+			pmiPutAtomValueHandle(handle, &atom);
 
-		handle = ACT_HANDLE(m, DISK_PERDEV_READACTIVE, slot);
-		atom.ul = (unsigned long) sdc->rd_ticks;
-		pmiPutAtomValueHandle(handle, &atom);
+			handle = ACT_HANDLE(cm, DISK_PERDEV_READACTIVE, slot);
+			atom.ul = (unsigned long) sdc->rd_ticks;
+			pmiPutAtomValueHandle(handle, &atom);
 
-		handle = ACT_HANDLE(m, DISK_PERDEV_WRITEACTIVE, slot);
-		atom.ul = (unsigned long) sdc->wr_ticks;
-		pmiPutAtomValueHandle(handle, &atom);
+			handle = ACT_HANDLE(cm, DISK_PERDEV_WRITEACTIVE, slot);
+			atom.ul = (unsigned long) sdc->wr_ticks;
+			pmiPutAtomValueHandle(handle, &atom);
 
-		handle = ACT_HANDLE(m, DISK_PERDEV_DISCARDACTIVE, slot);
-		atom.ul = (unsigned long)sdc->dc_ticks;
-		pmiPutAtomValueHandle(handle, &atom);
+			handle = ACT_HANDLE(cm, DISK_PERDEV_DISCARDACTIVE, slot);
+			atom.ul = (unsigned long)sdc->dc_ticks;
+			pmiPutAtomValueHandle(handle, &atom);
 
-		handle = ACT_HANDLE(m, DISK_PERDEV_AVACTIVE, slot);
-		atom.ul = (unsigned long)sdc->tot_ticks;
-		pmiPutAtomValueHandle(handle, &atom);
+			handle = ACT_HANDLE(cm, DISK_PERDEV_AVACTIVE, slot);
+			atom.ul = (unsigned long)sdc->tot_ticks;
+			pmiPutAtomValueHandle(handle, &atom);
 
-		handle = ACT_HANDLE(m, DISK_PERDEV_AVQUEUE, slot);
-		atom.ul = (unsigned long)sdc->rq_ticks;
-		pmiPutAtomValueHandle(handle, &atom);
+			handle = ACT_HANDLE(cm, DISK_PERDEV_AVQUEUE, slot);
+			atom.ul = (unsigned long)sdc->rq_ticks;
+			pmiPutAtomValueHandle(handle, &atom);
 
-		handle = ACT_HANDLE(m, DISK_PERDEV_BLKREAD, slot);
-		atom.ull = (unsigned long long)sdc->rd_sect;
-		pmiPutAtomValueHandle(handle, &atom);
+			handle = ACT_HANDLE(cm, DISK_PERDEV_BLKREAD, slot);
+			atom.ull = (unsigned long long)sdc->rd_sect;
+			pmiPutAtomValueHandle(handle, &atom);
 
-		handle = ACT_HANDLE(m, DISK_PERDEV_BLKWRITE, slot);
-		atom.ull = (unsigned long long)sdc->wr_sect;
-		pmiPutAtomValueHandle(handle, &atom);
+			handle = ACT_HANDLE(cm, DISK_PERDEV_BLKWRITE, slot);
+			atom.ull = (unsigned long long)sdc->wr_sect;
+			pmiPutAtomValueHandle(handle, &atom);
 
-		handle = ACT_HANDLE(m, DISK_PERDEV_DISCARD, slot);
-		atom.ull = sdc->dc_ios;
-		pmiPutAtomValueHandle(handle, &atom);
+			handle = ACT_HANDLE(cm, DISK_PERDEV_DISCARD, slot);
+			atom.ull = sdc->dc_ios;
+			pmiPutAtomValueHandle(handle, &atom);
+		}
+		else {
+			/* Secondary class: use DCLASS_* indices */
+			handle = ACT_HANDLE(cm, DCLASS_READ, slot);
+			atom.ull = sdc->rd_ios;
+			pmiPutAtomValueHandle(handle, &atom);
+
+			handle = ACT_HANDLE(cm, DCLASS_WRITE, slot);
+			atom.ull = sdc->wr_ios;
+			pmiPutAtomValueHandle(handle, &atom);
+
+			handle = ACT_HANDLE(cm, DCLASS_TOTAL, slot);
+			atom.ull = (unsigned long long) sdc->nr_ios;
+			pmiPutAtomValueHandle(handle, &atom);
+
+			handle = ACT_HANDLE(cm, DCLASS_TOTALBYTES, slot);
+			atom.ull = (unsigned long long) (sdc->rd_sect + sdc->wr_sect) / 2;
+			pmiPutAtomValueHandle(handle, &atom);
+
+			handle = ACT_HANDLE(cm, DCLASS_READBYTES, slot);
+			atom.ull = (unsigned long long) sdc->rd_sect / 2;
+			pmiPutAtomValueHandle(handle, &atom);
+
+			handle = ACT_HANDLE(cm, DCLASS_WRITEBYTES, slot);
+			atom.ull = (unsigned long long) sdc->wr_sect / 2;
+			pmiPutAtomValueHandle(handle, &atom);
+
+			handle = ACT_HANDLE(cm, DCLASS_DISCBYTES, slot);
+			atom.ull = (unsigned long long) sdc->dc_sect / 2;
+			pmiPutAtomValueHandle(handle, &atom);
+
+			handle = ACT_HANDLE(cm, DCLASS_TOTALACTIVE, slot);
+			atom.ul = (unsigned long) sdc->rd_ticks + sdc->wr_ticks;
+			pmiPutAtomValueHandle(handle, &atom);
+
+			handle = ACT_HANDLE(cm, DCLASS_RD_ACTIVE, slot);
+			atom.ul = (unsigned long) sdc->rd_ticks;
+			pmiPutAtomValueHandle(handle, &atom);
+
+			handle = ACT_HANDLE(cm, DCLASS_WR_ACTIVE, slot);
+			atom.ul = (unsigned long) sdc->wr_ticks;
+			pmiPutAtomValueHandle(handle, &atom);
+
+			handle = ACT_HANDLE(cm, DCLASS_DISCARDACTIVE, slot);
+			atom.ul = (unsigned long)sdc->dc_ticks;
+			pmiPutAtomValueHandle(handle, &atom);
+
+			handle = ACT_HANDLE(cm, DCLASS_AVACTIVE, slot);
+			atom.ul = (unsigned long)sdc->tot_ticks;
+			pmiPutAtomValueHandle(handle, &atom);
+
+			handle = ACT_HANDLE(cm, DCLASS_AVEQ, slot);
+			atom.ul = (unsigned long)sdc->rq_ticks;
+			pmiPutAtomValueHandle(handle, &atom);
+
+			handle = ACT_HANDLE(cm, DCLASS_BLKREAD, slot);
+			atom.ull = (unsigned long long)sdc->rd_sect;
+			pmiPutAtomValueHandle(handle, &atom);
+
+			handle = ACT_HANDLE(cm, DCLASS_BLKWRITE, slot);
+			atom.ull = (unsigned long long)sdc->wr_sect;
+			pmiPutAtomValueHandle(handle, &atom);
+
+			handle = ACT_HANDLE(cm, DCLASS_DISCARD, slot);
+			atom.ull = sdc->dc_ios;
+			pmiPutAtomValueHandle(handle, &atom);
+		}
 	}
 }
 

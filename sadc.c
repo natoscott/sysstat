@@ -1777,6 +1777,10 @@ int main(int argc, char **argv)
 			switch (act[p]->id) {
 			case A_DISK:
 				pcp_probe_disk_instances(act[p]);
+				pcp_probe_dm_instances(act[p]);
+				pcp_probe_md_instances(act[p]);
+				pcp_probe_part_instances(act[p]);
+				pcp_probe_zram_instances(act[p]);
 				break;
 			case A_NET_DEV:
 				pcp_probe_net_dev_instances(act[p]);
