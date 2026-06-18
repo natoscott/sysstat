@@ -5611,6 +5611,14 @@ build_sadc_activities_string(char *buf, size_t len)
  * current session value (which is identical across calls in one session).
  ***************************************************************************
  */
+static const char *sadc_metric_oneline[] = {
+	[SADC_VERSION]    = "sysstat version that created this archive",
+	[SADC_ACTIVITIES] = "comma-separated list of collected sysstat activities",
+	[SADC_INTERVAL]   = "nominal collection interval in seconds",
+	[SADC_COMMENT]    = "operator comment inserted at this timestamp",
+	[SADC_RESTARTS]   = "system restart event (value=1 at restart timestamps)",
+};
+
 void
 pcp_register_sadc_metrics(void)
 {
@@ -5621,6 +5629,9 @@ pcp_register_sadc_metrics(void)
 		pmiAddMetric(sadc_metric_names[i],
 			     d->pmid, d->type, d->indom, d->sem, d->units);
 		pcp_alloc_handle(&sadc_metrics, i, 0, PM_IN_NULL, NULL);
+		if (sadc_metric_oneline[i])
+			pmiPutText(PM_TEXT_PMID, PM_TEXT_ONELINE,
+				   d->pmid, sadc_metric_oneline[i]);
 	}
 }
 

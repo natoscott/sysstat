@@ -1724,6 +1724,9 @@ int main(int argc, char **argv)
 		/* Register local metrics into the now-open PMI write context */
 		pcp_local_register(&local_cfg);
 
+		/* Write help text for local (proc.*) metrics from the DSO PMDA */
+		pcp_local_write_help(&local_cfg);
+
 		/* Enable automatic data volume rotation if configured */
 		pcp_sadc_set_volume_size(local_cfg.volume_size);
 

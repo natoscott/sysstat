@@ -30,6 +30,9 @@
 /* PM_CONTEXT_LOCAL handle — saved at init, restored after each fetch */
 static int local_ctx = -1;
 
+/* Return the local context handle for help-text lookups in pcp_def_metrics.c */
+int pcp_local_get_ctx(void) { return local_ctx; }
+
 /*
  ***************************************************************************
  * Config file parsing
@@ -408,8 +411,12 @@ pcp_local_init(struct pcp_local_config *cfg, const char *conffile)
 	char path[MAXPATHLEN];
 	pmsprintf(path, sizeof(path), "%s/local.conf", pmGetConfig("PCP_SYSCONF_DIR"));
 	setenv("PCP_PMCDCONF_FILE", path, 0);
+	/* Prefer local.root (new name); fall back to root.local on older installs */
 	pmsprintf(path, sizeof(path), "%s/pmns/local.root", pmGetConfig("PCP_VAR_DIR"));
-	setenv("PMNS_DEFAULT",      path, 0);
+	if (access(path, F_OK) != 0)
+		pmsprintf(path, sizeof(path), "%s/pmns/root.local",
+			  pmGetConfig("PCP_VAR_DIR"));
+	setenv("PMNS_DEFAULT", path, 0);
 
 	/* Open PM_CONTEXT_LOCAL — loads proc PMDA (and any extras above) */
 	sts = pmNewContext(PM_CONTEXT_LOCAL, NULL);
@@ -631,6 +638,93 @@ pcp_local_write(struct pcp_local_config *cfg,
 	}
 
 	pmFreeResult(result);
+}
+
+/*
+ ***************************************************************************
+ * Write help text for all local-context metrics into the active PMI
+ * write context.  Switches to the local context to call pmLookupText(),
+ * then back to the PMI context to call pmiPutText().  Silently skips
+ * any metric for which help text is unavailable.
+ *
+ * IN:
+ * @cfg		Local metric configuration (metrics whose PMIDs to look up).
+ ***************************************************************************
+ */
+void
+pcp_local_write_help(const struct pcp_local_config *cfg)
+{
+	int saved_ctx, i;
+	char *text;
+
+	if (!cfg->num_metrics || local_ctx < 0)
+		return;
+
+	saved_ctx = pmWhichContext();
+	pmUseContext(local_ctx);
+
+	for (i = 0; i < (int)cfg->num_metrics; i++) {
+		pmID pmid = cfg->metrics[i].pmid;
+
+		if (pmLookupText(pmid, PM_TEXT_ONELINE, &text) >= 0) {
+			pmUseContext(saved_ctx);
+			pmiPutText(PM_TEXT_PMID, PM_TEXT_ONELINE, pmid, text);
+			pmUseContext(local_ctx);
+			free(text);
+		}
+		if (pmLookupText(pmid, PM_TEXT_HELP, &text) >= 0) {
+			pmUseContext(saved_ctx);
+			pmiPutText(PM_TEXT_PMID, PM_TEXT_HELP, pmid, text);
+			pmUseContext(local_ctx);
+			free(text);
+		}
+	}
+
+	pmUseContext(saved_ctx);
+}
+
+/*
+ ***************************************************************************
+ * Write help text for an arbitrary set of PMIDs using the local DSO PMDA
+ * context.  Used by sadc to populate archive help text for standard PCP
+ * metrics (kernel.*, disk.*, mem.*, network.*, etc.) after all activities
+ * have been registered.  Silently skips PMIDs with no text available.
+ *
+ * IN:
+ * @pmids	Array of PMIDs to look up.
+ * @n		Length of @pmids.
+ ***************************************************************************
+ */
+void
+pcp_local_write_pmid_help(const pmID *pmids, int n)
+{
+	int saved_ctx, i;
+	char *text;
+
+	if (local_ctx < 0 || n <= 0)
+		return;
+
+	saved_ctx = pmWhichContext();
+	pmUseContext(local_ctx);
+
+	for (i = 0; i < n; i++) {
+		if (pmids[i] == PM_ID_NULL)
+			continue;
+		if (pmLookupText(pmids[i], PM_TEXT_ONELINE, &text) >= 0) {
+			pmUseContext(saved_ctx);
+			pmiPutText(PM_TEXT_PMID, PM_TEXT_ONELINE, pmids[i], text);
+			pmUseContext(local_ctx);
+			free(text);
+		}
+		if (pmLookupText(pmids[i], PM_TEXT_HELP, &text) >= 0) {
+			pmUseContext(saved_ctx);
+			pmiPutText(PM_TEXT_PMID, PM_TEXT_HELP, pmids[i], text);
+			pmUseContext(local_ctx);
+			free(text);
+		}
+	}
+
+	pmUseContext(saved_ctx);
 }
 
 /*

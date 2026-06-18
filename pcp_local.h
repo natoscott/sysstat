@@ -63,6 +63,15 @@ void pcp_local_register(struct pcp_local_config *cfg);
 void pcp_local_write(struct pcp_local_config *cfg,
 		     unsigned long long ust_time, long nsec);
 
+/* Return local context handle for help-text lookups */
+int  pcp_local_get_ctx(void);
+
+/* Write help text for local metrics into active PMI archive */
+void pcp_local_write_help(const struct pcp_local_config *cfg);
+
+/* Write help text for arbitrary PMIDs via local DSO PMDA context */
+void pcp_local_write_pmid_help(const pmID *pmids, int n);
+
 /* Release all resources */
 void pcp_local_free(struct pcp_local_config *cfg);
 

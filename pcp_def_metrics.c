@@ -29,6 +29,7 @@
 #include <pcp/impl.h>
 #endif
 #include "pcp_def_metrics.h"
+#include "pcp_local.h"
 
 extern struct activity *act[];
 extern uint64_t flags;
@@ -47,6 +48,8 @@ void act_add_metric(struct activity *a, int metric)
 	struct act_metrics *metrics = a->metrics;
 	const char *name;
 	pmDesc *desc;
+	int local, saved;
+	char *text;
 
 	if (!metrics || (size_t)metric >= metrics->count)
 		PANIC(EINVAL);
@@ -54,6 +57,26 @@ void act_add_metric(struct activity *a, int metric)
 	name = metrics->names[metric];
 	desc = &metrics->descs[metric];
 	pmiAddMetric(name, desc->pmid, desc->type, desc->indom, desc->sem, desc->units);
+
+	/* Write help text from the local DSO PMDA into the archive if available */
+	local = pcp_local_get_ctx();
+	if (local < 0)
+		return;
+	saved = pmWhichContext();
+	pmUseContext(local);
+	if (pmLookupText(desc->pmid, PM_TEXT_ONELINE, &text) >= 0) {
+		pmUseContext(saved);
+		pmiPutText(PM_TEXT_PMID, PM_TEXT_ONELINE, desc->pmid, text);
+		pmUseContext(local);
+		free(text);
+	}
+	if (pmLookupText(desc->pmid, PM_TEXT_HELP, &text) >= 0) {
+		pmUseContext(saved);
+		pmiPutText(PM_TEXT_PMID, PM_TEXT_HELP, desc->pmid, text);
+		pmUseContext(local);
+		free(text);
+	}
+	pmUseContext(saved);
 }
 
 #ifdef HAVE_PMIEXTRAUNITS
@@ -1925,8 +1948,11 @@ void pcp_def_disk_metrics(struct activity *a)
 		pcp_def_perdisk_instances(a);
 	}
 
-	act_add_metric(a, DISK_PERDEV_READ);
-	act_add_metric(a, DISK_PERDEV_WRITE);
+	/* DISK_PERDEV_READ / DISK_PERDEV_WRITE (disk.dev.read / disk.dev.write)
+	 * are not registered: stats_disk tracks only total IOs (nr_ios), not
+	 * separate read/write operation counts, so we have no data for them.
+	 * PCP's derived metrics that reference disk.dev.read will warn; those
+	 * definitions should use defined() guards. */
 	act_add_metric(a, DISK_PERDEV_TOTAL);
 	act_add_metric(a, DISK_PERDEV_TOTALBYTES);
 	act_add_metric(a, DISK_PERDEV_READBYTES);
