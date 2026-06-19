@@ -102,6 +102,33 @@ static struct pcp_local_config local_cfg;
  * @out		Buffer to receive the archive base path.
  * @len		Size of @out.
  */
+/*
+ * Determine SA_DIR: check SA_DIR env var, then /etc/sysconfig/sysstat, else default.
+ */
+static void
+get_sa_dir(char *out, size_t len)
+{
+	const char *env = getenv("SA_DIR");
+	FILE *fp;
+	char line[256];
+
+	if (env && env[0]) {
+		pmstrncpy(out, len, env);
+		return;
+	}
+	pmstrncpy(out, len, "/var/log/sa");
+	if ((fp = fopen("/etc/sysconfig/sysstat", "r")) == NULL)
+		return;
+	while (fgets(line, sizeof(line), fp)) {
+		if (strncmp(line, "SA_DIR=", 7) == 0) {
+			line[strcspn(line, "\n\r")] = '\0';
+			pmstrncpy(out, len, line + 7);
+			break;
+		}
+	}
+	fclose(fp);
+}
+
 static void
 set_pcp_default_archive(const char *safile, time_t epoch,
 			char *out, size_t len)
@@ -1178,6 +1205,7 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 	uint64_t save_flags;
 	long record_hdr_ust_nsec;
 	char new_ofile[MAX_FILE_LEN] = "";
+	char sadc_info_dir[MAX_FILE_LEN] = "";
 	struct tm rectime = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NULL};
 
 	/* Set a handler for SIGINT and SIGTERM */
@@ -1328,6 +1356,8 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 							pcp_archive,
 							sizeof(pcp_archive));
 				pcp_open_sadc_archive(pcp_archive, &file_hdr);
+				get_sa_dir(sadc_info_dir, sizeof(sadc_info_dir));
+				pcp_write_sadc_info_file(sadc_info_dir, interval);
 				pcp_write_file_header_metrics(&file_hdr);
 				pcp_write_sadc_header(interval);
 				for (p = 0; p < NR_ACT; p++) {
@@ -1402,7 +1432,7 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 int main(int argc, char **argv)
 {
 	int opt = 0;
-	char ofile[MAX_FILE_LEN], sa_dir[MAX_FILE_LEN];
+	char ofile[MAX_FILE_LEN], sa_dir[MAX_FILE_LEN], sadc_info_dir[MAX_FILE_LEN];
 	int stdfd = 0, ofd = -1;
 	int restart_mark;
 	long count = 0;
@@ -1723,6 +1753,10 @@ int main(int argc, char **argv)
 			flags &= ~S_F_PCP_OUTPUT;
 			goto pcp_init_done;
 		}
+
+		/* Write SA_DIR/.sadc.info for cheap consumption by pmdapmcd */
+		pmstrncpy(sadc_info_dir, sizeof(sadc_info_dir), pcp_archive);
+		pcp_write_sadc_info_file(dirname(dirname(sadc_info_dir)), interval);
 
 		/* Register local metrics into the now-open PMI write context */
 		pcp_local_register(&local_cfg);

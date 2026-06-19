@@ -5835,6 +5835,36 @@ pcp_write_sadc_header(long interval_secs)
 
 /*
  ***************************************************************************
+ * Write SA_DIR/.sadc.info for lightweight consumption by pmdapmcd.
+ * The file is a plain key=value text file with three lines; pmdapmcd
+ * reads it with fopen/fgets rather than opening the full PCP archive.
+ *
+ * IN:
+ * @sadir		SA data directory (e.g. /var/log/sa).
+ * @interval_secs	Collection interval, or -1 for non-collection runs.
+ ***************************************************************************
+ */
+void
+pcp_write_sadc_info_file(const char *sadir, long interval_secs)
+{
+	char	path[MAX_FILE_LEN];
+	char	abuf[1024];
+	FILE	*fp;
+
+	pmsprintf(path, sizeof(path), "%s/.sadc.info", sadir);
+	if ((fp = fopen(path, "w")) == NULL)
+		return;
+
+	build_sadc_activities_string(abuf, sizeof(abuf));
+	fprintf(fp, "version=%s\n", VERSION);
+	fprintf(fp, "activities=%s\n", abuf);
+	if (interval_secs > 0)
+		fprintf(fp, "interval=%ld\n", interval_secs);
+	fclose(fp);
+}
+
+/*
+ ***************************************************************************
  * Write a PCP special record (restart or comment) and close the archive.
  * Mirrors write_special_record() for the native .sa format.
  *
