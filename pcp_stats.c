@@ -1858,6 +1858,21 @@ __print_funct_t pcp_print_net_dev_stats(struct activity *a, int curr)
 		handle = ACT_HANDLE(m, NET_PERINTF_INMULTICAST, slot);
 		atom.ull = (unsigned long long)sndc->multicast;
 		pmiPutAtomValueHandle(handle, &atom);
+
+		if (sndc->speed) {
+			handle = ACT_HANDLE(m, NET_PERINTF_SPEED, slot);
+			atom.f = (float)sndc->speed / 8.0;
+			pmiPutAtomValueHandle(handle, &atom);
+
+			handle = ACT_HANDLE(m, NET_PERINTF_BAUDRATE, slot);
+			atom.ull = (unsigned long long)sndc->speed * 125000ULL;
+			pmiPutAtomValueHandle(handle, &atom);
+		}
+		if (sndc->duplex) {
+			handle = ACT_HANDLE(m, NET_PERINTF_DUPLEX, slot);
+			atom.ul = (unsigned int)sndc->duplex;
+			pmiPutAtomValueHandle(handle, &atom);
+		}
 	}
 }
 

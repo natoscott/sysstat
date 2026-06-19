@@ -2826,6 +2826,9 @@ void pcp_def_net_dev_metrics(struct activity *a)
 		act_add_metric(a, NET_PERINTF_INCOMPRESS);
 		act_add_metric(a, NET_PERINTF_OUTCOMPRESS);
 		act_add_metric(a, NET_PERINTF_INMULTICAST);
+		act_add_metric(a, NET_PERINTF_SPEED);
+		act_add_metric(a, NET_PERINTF_BAUDRATE);
+		act_add_metric(a, NET_PERINTF_DUPLEX);
 	}
 	else {
 		/* Create metrics for A_NET_EDEV */
@@ -2851,6 +2854,9 @@ const char *netdev_metric_names[] = {
 	[NET_PERINTF_INCOMPRESS] = "network.interface.in.compressed",
 	[NET_PERINTF_OUTCOMPRESS] = "network.interface.out.compressed",
 	[NET_PERINTF_INMULTICAST] = "network.interface.in.mcasts",
+	[NET_PERINTF_SPEED]       = "network.interface.speed",
+	[NET_PERINTF_BAUDRATE]    = "network.interface.baudrate",
+	[NET_PERINTF_DUPLEX]      = "network.interface.duplex",
 };
 pmDesc netdev_metric_descs[] = {
 	[NET_PERINTF_INPACKETS] = {
@@ -2901,6 +2907,27 @@ pmDesc netdev_metric_descs[] = {
 		.units = PMI_UNITS(0, 0, 1, 0, 0, PM_COUNT_ONE),
 		.type = PM_TYPE_U64,
 		.sem = PM_SEM_COUNTER,
+	},
+	[NET_PERINTF_SPEED] = {
+		.pmid = PMID_NET_PERINTF_SPEED,
+		.indom = PMI_INDOM(60, 3),
+		.units = PMI_UNITS(1, -1, 0, PM_SPACE_MBYTE, PM_TIME_SEC, 0),
+		.type = PM_TYPE_FLOAT,
+		.sem = PM_SEM_DISCRETE,
+	},
+	[NET_PERINTF_BAUDRATE] = {
+		.pmid = PMID_NET_PERINTF_BAUDRATE,
+		.indom = PMI_INDOM(60, 3),
+		.units = PMI_UNITS(1, -1, 0, PM_SPACE_BYTE, PM_TIME_SEC, 0),
+		.type = PM_TYPE_U64,
+		.sem = PM_SEM_DISCRETE,
+	},
+	[NET_PERINTF_DUPLEX] = {
+		.pmid = PMID_NET_PERINTF_DUPLEX,
+		.indom = PMI_INDOM(60, 3),
+		.units = PMI_UNITS(0, 0, 0, 0, 0, 0),
+		.type = PM_TYPE_U32,
+		.sem = PM_SEM_DISCRETE,
 	},
 };
 pmID netdev_metric_pmids[NET_PERINTF_METRIC_COUNT];
