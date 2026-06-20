@@ -5835,31 +5835,42 @@ pcp_write_sadc_header(long interval_secs)
 
 /*
  ***************************************************************************
- * Write SA_DIR/.sadc.info for lightweight consumption by pmdapmcd.
- * The file is a plain key=value text file with three lines; pmdapmcd
- * reads it with fopen/fgets rather than opening the full PCP archive.
+ * Write PCP_RUN_DIR/pmimport/sadc for lightweight consumption by pmdapmcd.
+ * The file is a plain key=value text file; pmdapmcd reads it with
+ * fopen/fgets to serve the pmcd.pmimport.* metrics without opening the
+ * full PCP archive.
  *
  * IN:
- * @sadir		SA data directory (e.g. /var/log/sa).
- * @interval_secs	Collection interval, or -1 for non-collection runs.
+ * @archive_path	Full path to the current PCP archive base.
  ***************************************************************************
  */
 void
-pcp_write_sadc_info_file(const char *sadir, long interval_secs)
+pcp_write_sadc_info_file(const char *archive_path)
 {
-	char	path[MAX_FILE_LEN];
-	char	abuf[1024];
-	FILE	*fp;
+	char		path[MAX_FILE_LEN];
+	char		abuf[512];
+	const char	*rundir;
+	int		fd;
+	FILE		*fp;
 
-	pmsprintf(path, sizeof(path), "%s/.sadc.info", sadir);
-	if ((fp = fopen(path, "w")) == NULL)
+	rundir = pmGetConfig("PCP_RUN_DIR");
+	pmsprintf(path, sizeof(path), "%s/pmimport", rundir);
+	mkdir(path, 0755);	/* harmless if already exists */
+
+	pmsprintf(path, sizeof(path), "%s/pmimport/sadc", rundir);
+	fd = open(path, O_CREAT | O_WRONLY | O_TRUNC, 0644);
+	if (fd < 0)
 		return;
+	if ((fp = fdopen(fd, "w")) == NULL) {
+		close(fd);
+		return;
+	}
 
 	build_sadc_activities_string(abuf, sizeof(abuf));
 	fprintf(fp, "version=%s\n", VERSION);
-	fprintf(fp, "activities=%s\n", abuf);
-	if (interval_secs > 0)
-		fprintf(fp, "interval=%ld\n", interval_secs);
+	fprintf(fp, "args=%s\n", abuf);
+	if (archive_path && archive_path[0])
+		fprintf(fp, "archive=%s\n", archive_path);
 	fclose(fp);
 }
 

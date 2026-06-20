@@ -110,7 +110,7 @@ __print_funct_t pcp_print_psimem_stats
 /* sadc self-description and event functions */
 void pcp_register_sadc_metrics(void);
 void pcp_write_sadc_header(long interval_secs);
-void pcp_write_sadc_info_file(const char *sadir, long interval_secs);
+void pcp_write_sadc_info_file(const char *archive_path);
 void pcp_write_sadc_special_record(const char *comment, unsigned int cpu_nr,
 				   unsigned long long timestamp, long nsec);
 
