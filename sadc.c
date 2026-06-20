@@ -1959,6 +1959,10 @@ int main(int argc, char **argv)
 				break;
 			}
 		}
+
+		/* Write help text for all actively-collected metrics */
+		pcp_write_activity_help(act, NR_ACT);
+
 pcp_init_done:	;
 	}
 #endif /* HAVE_PMI_APPEND */

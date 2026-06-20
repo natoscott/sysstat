@@ -6096,6 +6096,51 @@ int read_stats_from_result(pmResult *result, struct file_header *header, int cur
 
 /*
  ***************************************************************************
+ * Write help text into the open archive for every metric that is actively
+ * being collected in this sadc session.  Mirrors the pcp_def_*_metrics()
+ * dispatch in sadc.c: only activities with IS_COLLECTED set are included,
+ * and activities that share a metrics table (A_CPU/A_PWR_CPU/A_NET_SOFT)
+ * or have secondary tables (A_DISK, A_NET_DEV/A_NET_EDEV) are handled the
+ * same way as their pcp_def counterparts.
+ *
+ * IN:
+ * @act		Array of activities.
+ * @nact	Number of entries in @act.
+ ***************************************************************************
+ */
+void
+pcp_write_activity_help(struct activity *act[], int nact)
+{
+	int p;
+
+	for (p = 0; p < nact; p++) {
+		if (!IS_COLLECTED(act[p]->options))
+			continue;
+
+		switch (act[p]->id) {
+		case A_DISK:
+			pcp_local_write_pmid_help(disk_metrics.pmids,  disk_metrics.count);
+			pcp_local_write_pmid_help(dm_metrics.pmids,    dm_metrics.count);
+			pcp_local_write_pmid_help(md_metrics.pmids,    md_metrics.count);
+			pcp_local_write_pmid_help(part_metrics.pmids,  part_metrics.count);
+			pcp_local_write_pmid_help(zram_metrics.pmids,  zram_metrics.count);
+			break;
+		case A_NET_DEV:
+		case A_NET_EDEV:
+			pcp_local_write_pmid_help(netdev_metrics.pmids,  netdev_metrics.count);
+			pcp_local_write_pmid_help(netedev_metrics.pmids, netedev_metrics.count);
+			break;
+		default:
+			if (act[p]->metrics && act[p]->metrics->pmids)
+				pcp_local_write_pmid_help(act[p]->metrics->pmids,
+							  act[p]->metrics->count);
+			break;
+		}
+	}
+}
+
+/*
+ ***************************************************************************
  * Register and stage the file-header metrics that sar/sadf read to print
  * the report header (CPU count, uname strings).  Written once at archive
  * open time using pmiPutAtomValueHandle after pmiAddMetric.

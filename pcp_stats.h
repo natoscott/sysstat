@@ -120,6 +120,7 @@ int read_stats_from_result(pmResult *result, struct file_header *header, int cur
 void pcp_read_sadc_metrics(char **version, long *interval);
 
 /* sadf->PCP write-path wrappers (no PMI calls in sadf_misc.c) */
+void pcp_write_activity_help(struct activity *act[], int nact);
 void pcp_write_file_header_metrics(const struct file_header *hdr);
 void pcp_write_inventory_metrics(__nr_t nr_disk, __nr_t nr_iface,
 				 unsigned long long ust_time,
