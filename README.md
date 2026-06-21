@@ -116,8 +116,11 @@ PCP_SA_OPTIONS="-O sa+pcp"
 PCP_SA_OPTIONS="-O pcp"
 ```
 
-PCP archives are written to `/var/log/sa/pcpDD/pcpDD` (where DD is the day
-of month).  Beyond the standard system-wide metrics that `sar` and `sadf`
+PCP archives share the sa output base path (e.g. `/var/log/sa/sa18.meta`,
+`/var/log/sa/sa18.index`, `/var/log/sa/sa18.0`) alongside the native sa file,
+with no conflict since PCP appends its own suffixes.
+
+Beyond the standard system-wide metrics that `sar` and `sadf`
 already record, `sadc` also collects metrics from any installed PCP DSO PMDA
 via a local PMDA context, configured in `/etc/sysconfig/sysstat.pcpconf`.
 

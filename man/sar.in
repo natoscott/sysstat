@@ -313,9 +313,7 @@ skips native sa format detection and reports an error if the path is
 not a valid PCP archive.
 The
 .I archive
-argument may be an archive base path or a directory named
-.BI "pcpDD/"
-containing an archive of the same base name.
+argument is a PCP archive base path (without .meta/.index/.0 suffixes).
 Requires PCP support
 .RB ( HAVE_PCP ).
 .TP
@@ -333,7 +331,7 @@ If
 is a directory it is searched for the most recently modified of
 .BI "saDD" ","
 .BI "saYYYYMMDD" ","
-.BI "pcpDD/" " and " "pcpYYYYMMDD/"
+.BI "saDD.meta" " and " "saYYYYMMDD.meta"
 entries.
 If
 .I filename

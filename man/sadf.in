@@ -44,7 +44,7 @@ The standard system activity daily data file is named
 for the current day.
 .B sadf
 will look for the most recent of
-.IR "saDD" ", " "saYYYYMMDD" ", " "pcpDD/" " and " "pcpYYYYMMDD/"
+.IR "saDD" ", " "saYYYYMMDD" " and their PCP archive counterparts " "saDD.meta" ", " "saYYYYMMDD.meta"
 and use it. By default it is located in the
 .I @SA_DIR@
 directory. Yet it is possible to specify an alternate location for it: If
@@ -166,14 +166,9 @@ The archive is written using Y2038-safe nanosecond-resolution timestamps
 .RB "(" "pmiHighResWrite" ")."
 The name of the archive can be specified using the keyword
 .BR "pcparchive= " "with option " "\-O" "."
-If no name is given the archive is placed in a
-.IB "pcpDD" "/"
-directory (or
-.IB "pcpYYYYMMDD" "/"
-with
-.BR "\-D" ")"
-alongside the input data file, following the same naming convention used
-by
+If no name is given the archive shares the base path of the input data file,
+with PCP suffixes (.meta, .index, .0) appended, following the same convention
+used by
 .BR "sadc \-O pcp" "."
 The resulting archive includes
 .BR "sadc.version" ", " "sadc.activities" " and " "sadc.interval"
@@ -238,9 +233,8 @@ The following option may be used when data are exported to a PCP archive:
 .TP
 .RI "pcparchive=" "name"
 Specify the base name of the PCP archive to create.
-If omitted, the archive is placed in a
-.IB "pcpDD" "/"
-directory alongside the input data file.
+If omitted, the archive shares the base path of the input data file
+with PCP suffixes appended.
 .RE
 .IP
 The following option is used to control raw output displayed by

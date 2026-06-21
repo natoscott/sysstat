@@ -141,17 +141,12 @@ no native sysstat file is created.
 A PCP write error is fatal in this mode.
 .RE
 .PP
-The PCP archive is stored in a per-day directory named
-.IB "pcpDD" "/"
-(or
-.IB "pcpYYYYMMDD" "/"
-with
-.BR \-D )
-in the same directory as the native data file, with the archive base
-name matching the directory (e.g.
-.IR "@SA_DIR@/pcp28/pcp28" ").
-An explicit base path may be given with
-.BI "=\fIarchive\fP" "."
+The PCP archive shares the same base path as the native sa output file.
+PCP appends its own suffixes so the files coexist without conflict
+(e.g. with output file
+.IR "@SA_DIR@/sa28" ,
+the PCP archive is
+.IR "@SA_DIR@/sa28.meta" ", " "@SA_DIR@/sa28.index" " and " "@SA_DIR@/sa28.0" ").
 .PP
 Each PCP archive records
 .BR sadc.version ,
@@ -286,17 +281,17 @@ The standard system activity daily data files and their default location.
 .IR "YYYY " "stands for the current year, " "MM " "for the current month and " "DD"
 for the current day.
 .RE
-.I @SA_DIR@/pcpDD/pcpDD
+.I @SA_DIR@/saDD.meta
 .br
-.I @SA_DIR@/pcpYYYYMMDD/pcpYYYYMMDD
+.I @SA_DIR@/saDD.index
+.br
+.I @SA_DIR@/saDD.0
 .RS
-PCP archive base paths written when
+PCP archive files written alongside the native sa file when
 .B -O pcp
 or
 .B -O sa+pcp
-is active.  Each archive consists of
-.IR pcpDD .meta ", " pcpDD .index " and one or more " pcpDD .N
-data volumes.
+is active.
 .RE
 .I @SYSCONFIG_DIR@/sysstat.pcpconf
 .RS
