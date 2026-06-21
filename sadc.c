@@ -199,11 +199,8 @@ void usage(char *progname)
 		progname);
 
 	fprintf(stderr, _("Options are:\n"
-			  "[ -C <comment> ] [ -D ] [ -F ] [ -f ] [ -L ] [ -V ]\n"
-#ifdef HAVE_PMI_APPEND
-			  "[ -O sa+pcp[=<archive>] ] [ -O pcp[=<archive>] ]\n"
-#endif
-			  "[ -S { INT | DISK | IPV6 | POWER | SNMP | XDISK | ALL | XALL } ]\n"));
+			  "[ -C <comment> ] [ -D ] [ -F ] [ -f ] [ -L ] [ -O { sa | pcp | sa+pcp } ]\n"
+			  "[ -S { INT | DISK | IPV6 | POWER | SNMP | XDISK | ALL | XALL } ] [ -V ]\n"));
 	exit(1);
 }
 
@@ -1470,19 +1467,15 @@ int main(int argc, char **argv)
 			flags |= S_F_FDATASYNC;
 		}
 
-#ifdef HAVE_PMI_APPEND
 		else if (!strncmp(argv[opt], "-O", 2)) {
 			/*
-			 * -O sa+pcp[=<archive>]
-			 *   Write PCP archive AND native sysstat format.
-			 *   PCP error is non-fatal; sadc falls back to native.
+			 * -O sa        Native format only (default, always accepted).
+			 * -O sa+pcp    Write both native and PCP archive (requires
+			 *              PCP append support compiled in).
+			 * -O pcp       Write PCP archive only (requires PCP append
+			 *              support compiled in).
 			 *
-			 * -O pcp[=<archive>]
-			 *   Write PCP archive ONLY (no native .sa file).
-			 *   PCP error is fatal.
-			 *
-			 * Archive path defaults to /var/log/sa/pcpDD/pcpDD
-			 * derived from the output file; override with =<path>.
+			 * PCP archive path is derived from the output file.
 			 */
 			const char *val = argv[opt] + 2;
 			if (!*val) {
@@ -1490,25 +1483,26 @@ int main(int argc, char **argv)
 					usage(argv[0]);
 				val = argv[opt];
 			}
-			if (!strncmp(val, "sa+pcp", 6)) {
-				/* -O sa+pcp[=<archive>]: write both native and PCP */
-				flags |= S_F_PCP_OUTPUT;
-				if (val[6] == '=')
-					snprintf(pcp_archive, sizeof(pcp_archive),
-						 "%s", val + 7);
+			if (!strcmp(val, "sa")) {
+				/* explicit native format (the default, no-op) */
 			}
-			else if (!strncmp(val, "pcp", 3)) {
-				/* -O pcp[=<archive>]: write PCP archive only */
-				flags |= S_F_PCP_OUTPUT | S_F_PCP_ONLY;
-				if (val[3] == '=')
-					snprintf(pcp_archive, sizeof(pcp_archive),
-						 "%s", val + 4);
+			else if (!strcmp(val, "sa+pcp") || !strcmp(val, "pcp")) {
+#ifdef HAVE_PMI_APPEND
+				if (!strcmp(val, "sa+pcp"))
+					flags |= S_F_PCP_OUTPUT;
+				else
+					flags |= S_F_PCP_OUTPUT | S_F_PCP_ONLY;
+#else
+				fprintf(stderr,
+					_("sadc: -O %s: PCP archive support not compiled in\n"),
+					val);
+				exit(1);
+#endif
 			}
 			else {
 				usage(argv[0]);
 			}
 		}
-#endif
 
 		else if (!strcmp(argv[opt], "-C")) {
 			if (!argv[++opt]) {
