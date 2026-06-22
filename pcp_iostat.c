@@ -98,25 +98,6 @@ static pmID md_iostat_pmids[PCP_IOSTAT_NR]   = DCLASS_PMIDS(DCLASS_CLUSTER_MD);
 static pmID part_iostat_pmids[PCP_IOSTAT_NR] = DCLASS_PMIDS(DCLASS_CLUSTER_PART);
 static pmID zram_iostat_pmids[PCP_IOSTAT_NR] = DCLASS_PMIDS(DCLASS_CLUSTER_ZRAM);
 
-static unsigned long long
-inst_u64(pmValueSet *vset, int inst_id)
-{
-	int i;
-
-	if (!vset) return 0;
-	for (i = 0; i < vset->numval; i++) {
-		if (vset->vlist[i].inst == inst_id) {
-			pmAtomValue atom;
-
-			if (pmExtractValue(vset->valfmt, &vset->vlist[i],
-					   PM_TYPE_U64, &atom, PM_TYPE_U64) < 0)
-				return 0;
-			return atom.ull;
-		}
-	}
-	return 0;
-}
-
 /*
  * Build dev_list from one disk device class in the pmResult.
  *
@@ -188,17 +169,17 @@ build_disk_snap(int curr, pmResult *result,
 		}
 		ios = d->dev_stats[curr];
 
-		ios->rd_ios    = (unsigned long)inst_u64(vs[PCP_IOSTAT_READ],      inst_id);
-		ios->wr_ios    = (unsigned long)inst_u64(vs[PCP_IOSTAT_WRITE],     inst_id);
-		ios->rd_merges = (unsigned long)inst_u64(vs[PCP_IOSTAT_RD_MERGE],  inst_id);
-		ios->wr_merges = (unsigned long)inst_u64(vs[PCP_IOSTAT_WR_MERGE],  inst_id);
+		ios->rd_ios    = (unsigned long)pcp_inst_u64(vs[PCP_IOSTAT_READ],      inst_id);
+		ios->wr_ios    = (unsigned long)pcp_inst_u64(vs[PCP_IOSTAT_WRITE],     inst_id);
+		ios->rd_merges = (unsigned long)pcp_inst_u64(vs[PCP_IOSTAT_RD_MERGE],  inst_id);
+		ios->wr_merges = (unsigned long)pcp_inst_u64(vs[PCP_IOSTAT_WR_MERGE],  inst_id);
 		/* PCP read_bytes is kB; io_stats rd_sectors is 512-byte sectors */
-		ios->rd_sectors = inst_u64(vs[PCP_IOSTAT_RD_BYTES], inst_id) * 2;
-		ios->wr_sectors = inst_u64(vs[PCP_IOSTAT_WR_BYTES], inst_id) * 2;
-		ios->rd_ticks  = (unsigned int)inst_u64(vs[PCP_IOSTAT_RD_ACTIVE], inst_id);
-		ios->wr_ticks  = (unsigned int)inst_u64(vs[PCP_IOSTAT_WR_ACTIVE], inst_id);
-		ios->tot_ticks = (unsigned int)inst_u64(vs[PCP_IOSTAT_AVACTIVE],  inst_id);
-		ios->rq_ticks  = (unsigned int)inst_u64(vs[PCP_IOSTAT_AVEQ],      inst_id);
+		ios->rd_sectors = pcp_inst_u64(vs[PCP_IOSTAT_RD_BYTES], inst_id) * 2;
+		ios->wr_sectors = pcp_inst_u64(vs[PCP_IOSTAT_WR_BYTES], inst_id) * 2;
+		ios->rd_ticks  = (unsigned int)pcp_inst_u64(vs[PCP_IOSTAT_RD_ACTIVE], inst_id);
+		ios->wr_ticks  = (unsigned int)pcp_inst_u64(vs[PCP_IOSTAT_WR_ACTIVE], inst_id);
+		ios->tot_ticks = (unsigned int)pcp_inst_u64(vs[PCP_IOSTAT_AVACTIVE],  inst_id);
+		ios->rq_ticks  = (unsigned int)pcp_inst_u64(vs[PCP_IOSTAT_AVEQ],      inst_id);
 	}
 
 	if (n_indom > 0) {
@@ -228,19 +209,14 @@ static const struct disk_class disk_classes[] = {
 int
 pcp_iostat_run(const char *archive)
 {
-	int ctx, sts, c, i, m;
-	pmResult *result = NULL, *prev_result = NULL;
-	int first = 1, curr = 1;
-	struct tm rectime;
-
-	/*
-	 * Flat arrays covering all classes × metrics.
-	 * pmid_class[i]: which disk_classes[] entry owns fetch_pmids[i].
-	 */
+	pmID all_pmids[MAX_FETCH_PMIDS];
+	pmDesc all_descs[MAX_FETCH_PMIDS];
 	pmID fetch_pmids[MAX_FETCH_PMIDS];
-	int  pmid_class[MAX_FETCH_PMIDS];
-	int  fetch_nr = 0;
-	pmDesc descs[MAX_FETCH_PMIDS];
+	pmResult *result = NULL, *prev_result = NULL;
+	struct tm rectime;
+	int ctx, sts, c, i, m;
+	int all_nr = 0, fetch_nr = 0;
+	int first = 1, curr = 1;
 
 	ctx = pmNewContext(PM_CONTEXT_ARCHIVE, archive);
 	if (ctx < 0) {
@@ -250,35 +226,22 @@ pcp_iostat_run(const char *archive)
 	}
 
 	/*
-	 * Collect all candidate PMIDs, then resolve them all in one
-	 * pmLookupDescs call.  Only those that resolve successfully
-	 * (sts >= 0 per descriptor) are included in the fetch set.
+	 * Collect all candidate PMIDs across all disk classes, resolve them
+	 * in one pmLookupDescs call, then keep only those present in the archive.
 	 */
-	{
-		pmID  all_pmids[MAX_FETCH_PMIDS];
-		int   all_cls[MAX_FETCH_PMIDS];
-		int   all_nr = 0;
-		pmDesc all_descs[MAX_FETCH_PMIDS];
+	for (c = 0; c < NDISK_CLASSES; c++) {
+		for (m = 0; m < PCP_IOSTAT_NR; m++)
+			all_pmids[all_nr++] = disk_classes[c].pmids[m];
+	}
 
-		for (c = 0; c < NDISK_CLASSES; c++) {
-			for (m = 0; m < PCP_IOSTAT_NR; m++) {
-				all_pmids[all_nr] = disk_classes[c].pmids[m];
-				all_cls[all_nr]   = c;
-				all_nr++;
-			}
-		}
+	if (pmLookupDescs(all_nr, all_pmids, all_descs) < 0) {
+		pmDestroyContext(ctx);
+		return 1;
+	}
 
-		/* Batch descriptor lookup — one round-trip for all PMIDs */
-		pmLookupDescs(all_nr, all_pmids, all_descs);
-
-		for (i = 0; i < all_nr; i++) {
-			if (all_descs[i].pmid == PM_ID_NULL)
-				continue;	/* not in this archive */
-			fetch_pmids[fetch_nr] = all_pmids[i];
-			pmid_class[fetch_nr]  = all_cls[i];
-			descs[fetch_nr]       = all_descs[i];
-			fetch_nr++;
-		}
+	for (i = 0; i < all_nr; i++) {
+		if (all_descs[i].pmid != PM_ID_NULL)
+			fetch_pmids[fetch_nr++] = all_pmids[i];
 	}
 
 	if (!fetch_nr) {

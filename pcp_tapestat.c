@@ -24,6 +24,7 @@
 #include "common.h"
 #include "tapestat.h"
 #include "pcp_tapestat.h"
+#include "pcp_def_metrics.h"
 
 #include <locale.h>
 #ifdef USE_NLS
@@ -43,8 +44,6 @@ extern unsigned int       flags;
 void write_stats(struct tm *rectime);
 
 /* All tape.dev.* metrics live in linux PMDA cluster 71 */
-#define PMI_ID(d, c, i) ((((d)&0x1ff)<<22)|(((c)&0xfff)<<10)|((i)&0x3ff))
-
 enum {
 	PCP_TAPE_READ_CNT,	/* tape.dev.read_cnt       60.71.4 */
 	PCP_TAPE_READ_BYTES,	/* tape.dev.read_byte_cnt  60.71.3 */
@@ -69,25 +68,6 @@ static pmID pcp_tape_pmids[PCP_TAPE_NR] = {
 	[PCP_TAPE_RESID_CNT]  = PMI_ID(60, 71, 6),
 	[PCP_TAPE_IO_NS]      = PMI_ID(60, 71, 1),
 };
-
-static unsigned long long
-inst_u64(pmValueSet *vset, int inst_id)
-{
-	int i;
-
-	if (!vset) return 0;
-	for (i = 0; i < vset->numval; i++) {
-		if (vset->vlist[i].inst == inst_id) {
-			pmAtomValue atom;
-
-			if (pmExtractValue(vset->valfmt, &vset->vlist[i],
-					   PM_TYPE_U64, &atom, PM_TYPE_U64) < 0)
-				return 0;
-			return atom.ull;
-		}
-	}
-	return 0;
-}
 
 /*
  * Extract the tape device index from instance name "stN" → N.
@@ -143,15 +123,15 @@ build_tape_snap(struct tape_stats *tgt, pmResult *result,
 		if (tape_idx < 0 || tape_idx >= max_tape_drives)
 			continue;
 
-		tgt[tape_idx].read_count  = inst_u64(vs[PCP_TAPE_READ_CNT],   inst_id);
-		tgt[tape_idx].read_bytes  = inst_u64(vs[PCP_TAPE_READ_BYTES],  inst_id);
-		tgt[tape_idx].read_time   = inst_u64(vs[PCP_TAPE_READ_NS],    inst_id);
-		tgt[tape_idx].write_count = inst_u64(vs[PCP_TAPE_WRITE_CNT],  inst_id);
-		tgt[tape_idx].write_bytes = inst_u64(vs[PCP_TAPE_WRITE_BYTES], inst_id);
-		tgt[tape_idx].write_time  = inst_u64(vs[PCP_TAPE_WRITE_NS],   inst_id);
-		tgt[tape_idx].other_count = inst_u64(vs[PCP_TAPE_OTHER_CNT],  inst_id);
-		tgt[tape_idx].resid_count = inst_u64(vs[PCP_TAPE_RESID_CNT],  inst_id);
-		tgt[tape_idx].other_time  = inst_u64(vs[PCP_TAPE_IO_NS],      inst_id);
+		tgt[tape_idx].read_count  = pcp_inst_u64(vs[PCP_TAPE_READ_CNT],   inst_id);
+		tgt[tape_idx].read_bytes  = pcp_inst_u64(vs[PCP_TAPE_READ_BYTES],  inst_id);
+		tgt[tape_idx].read_time   = pcp_inst_u64(vs[PCP_TAPE_READ_NS],    inst_id);
+		tgt[tape_idx].write_count = pcp_inst_u64(vs[PCP_TAPE_WRITE_CNT],  inst_id);
+		tgt[tape_idx].write_bytes = pcp_inst_u64(vs[PCP_TAPE_WRITE_BYTES], inst_id);
+		tgt[tape_idx].write_time  = pcp_inst_u64(vs[PCP_TAPE_WRITE_NS],   inst_id);
+		tgt[tape_idx].other_count = pcp_inst_u64(vs[PCP_TAPE_OTHER_CNT],  inst_id);
+		tgt[tape_idx].resid_count = pcp_inst_u64(vs[PCP_TAPE_RESID_CNT],  inst_id);
+		tgt[tape_idx].other_time  = pcp_inst_u64(vs[PCP_TAPE_IO_NS],      inst_id);
 		tgt[tape_idx].tv.tv_sec   = (long)ts->tv_sec;
 		tgt[tape_idx].tv.tv_usec  = (long)(ts->tv_nsec / 1000);
 		tgt[tape_idx].valid       = TAPE_STATS_VALID;
@@ -232,9 +212,8 @@ pcp_tapestat_run(const char *archive)
 	if (result) pmFreeResult(result);
 	if (prev_result) pmFreeResult(prev_result);
 
-	for (i = 0; i < max_tape_drives; i++) {
-		/* clear valid flag so tapestat.c won't try to free */
-	}
+	for (i = 0; i < max_tape_drives; i++)
+		tape_new_stats[i].valid = TAPE_STATS_INVALID;
 	free(tape_old_stats); tape_old_stats = NULL;
 	free(tape_new_stats); tape_new_stats = NULL;
 	max_tape_drives = 0;

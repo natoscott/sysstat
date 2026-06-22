@@ -30,6 +30,7 @@
 #include "common.h"
 #include "cifsiostat.h"
 #include "pcp_cifsiostat.h"
+#include "pcp_def_metrics.h"
 
 #include <locale.h>
 #ifdef USE_NLS
@@ -48,7 +49,6 @@ struct io_cifs *add_list_cifs(struct io_cifs **clist, char *name);
 void write_stats(int curr, struct tm *rectime);
 
 /* CIFS PMDA is domain 121; all share the per-filesystem indom (121:1) */
-#define PMI_ID(d, c, i) ((((d)&0x1ff)<<22)|(((c)&0xfff)<<10)|((i)&0x3ff))
 
 enum {
 	PCP_CIFS_READ,		/* cifs.fs.read        121:1:3  */
@@ -73,25 +73,6 @@ static const char *pcp_cifs_names[PCP_CIFS_NR] = {
 };
 
 static pmID pcp_cifs_pmids[PCP_CIFS_NR];
-
-static unsigned long long
-inst_u64(pmValueSet *vset, int inst_id)
-{
-	int i;
-
-	if (!vset) return 0;
-	for (i = 0; i < vset->numval; i++) {
-		if (vset->vlist[i].inst == inst_id) {
-			pmAtomValue atom;
-
-			if (pmExtractValue(vset->valfmt, &vset->vlist[i],
-					   PM_TYPE_U64, &atom, PM_TYPE_U64) < 0)
-				return 0;
-			return atom.ull;
-		}
-	}
-	return 0;
-}
 
 static void
 build_cifs_snap(int curr, pmResult *result)
@@ -134,13 +115,13 @@ build_cifs_snap(int curr, pmResult *result)
 		}
 		cs = ci->cifs_stats[curr];
 
-		cs->rd_ops   = inst_u64(vs[PCP_CIFS_READ],        inst_id);
-		cs->rd_bytes = inst_u64(vs[PCP_CIFS_READ_BYTES],   inst_id);
-		cs->wr_ops   = inst_u64(vs[PCP_CIFS_WRITE],        inst_id);
-		cs->wr_bytes = inst_u64(vs[PCP_CIFS_WRITE_BYTES],  inst_id);
-		cs->fopens   = inst_u64(vs[PCP_CIFS_OPEN],         inst_id);
-		cs->fcloses  = inst_u64(vs[PCP_CIFS_CLOSE],        inst_id);
-		cs->fdeletes = inst_u64(vs[PCP_CIFS_DELETE],        inst_id);
+		cs->rd_ops   = pcp_inst_u64(vs[PCP_CIFS_READ],        inst_id);
+		cs->rd_bytes = pcp_inst_u64(vs[PCP_CIFS_READ_BYTES],   inst_id);
+		cs->wr_ops   = pcp_inst_u64(vs[PCP_CIFS_WRITE],        inst_id);
+		cs->wr_bytes = pcp_inst_u64(vs[PCP_CIFS_WRITE_BYTES],  inst_id);
+		cs->fopens   = pcp_inst_u64(vs[PCP_CIFS_OPEN],         inst_id);
+		cs->fcloses  = pcp_inst_u64(vs[PCP_CIFS_CLOSE],        inst_id);
+		cs->fdeletes = pcp_inst_u64(vs[PCP_CIFS_DELETE],        inst_id);
 	}
 }
 

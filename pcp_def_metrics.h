@@ -1457,6 +1457,30 @@ void pcp_alloc_handle(struct act_metrics *m, size_t metric,
 		      const char *inst_name);
 size_t pcp_find_slot(const struct act_metrics *m, int inst_id);
 
+/*
+ * Shared fetch helper: extract a u64 value for a specific instance from a
+ * pmValueSet.  Returns 0 if the instance is not present or extraction fails.
+ * Used by pcp_iostat, pcp_mpstat, pcp_cifsiostat and pcp_tapestat replay code.
+ */
+static inline unsigned long long
+pcp_inst_u64(pmValueSet *vset, int inst_id)
+{
+	int i;
+	pmAtomValue atom;
+
+	if (!vset)
+		return 0;
+	for (i = 0; i < vset->numval; i++) {
+		if (vset->vlist[i].inst != inst_id)
+			continue;
+		if (pmExtractValue(vset->valfmt, &vset->vlist[i],
+				   PM_TYPE_U64, &atom, PM_TYPE_U64) < 0)
+			return 0;
+		return atom.ull;
+	}
+	return 0;
+}
+
 #else
 /*
  ***************************************************************************

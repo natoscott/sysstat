@@ -7,10 +7,10 @@
  * context, fetching proc.* metrics across consecutive timestamps, and
  * displaying output in pidstat's existing format.
  *
- * Unit conventions (matching what pidstat's display functions expect):
- *   CPU times  — stored in jiffies  (converted from PCP ms via hz/1000)
- *   wtime      — stored in jiffies  (converted from PCP ns via hz/1e9)
- *   VSZ / RSS  — stored in kB       (PCP already delivers kB)
+ * Unit conventions:
+ *   CPU times  — stored in ms       (PCP delivers ms directly)
+ *   wtime      — stored in ms       (PCP delivers ns; divided by 1e6 on store)
+ *   VSZ / RSS  — stored in kB       (PCP delivers kB)
  *   I/O bytes  — stored in bytes    (PCP delivers bytes)
  *   fault/ctx  — stored as counts
  *   itv        — centiseconds       (timestamp delta * 100)
@@ -105,7 +105,7 @@ static pmDesc pcp_pid_descs[PCP_PID_NR];
 /* -------------------------------------------------------------------------
  * Per-sample per-process snapshot — values in pidstat display units.
  * rss and vsz are stored in kB (PCP delivers kB, no PG_TO_KB needed).
- * CPU times are in jiffies (converted from ms).
+ * CPU times are in ms (PCP delivers ms directly).
  * ------------------------------------------------------------------------- */
 
 struct pcp_pid_snap {
@@ -119,10 +119,10 @@ struct pcp_pid_snap {
 	unsigned int	 policy;
 	unsigned int	 threads;
 	unsigned int	 fd_count;
-	unsigned long long utime;	/* jiffies */
-	unsigned long long stime;	/* jiffies */
-	unsigned long long gtime;	/* jiffies */
-	unsigned long long wtime;	/* jiffies */
+	unsigned long long utime;	/* ms */
+	unsigned long long stime;	/* ms */
+	unsigned long long gtime;	/* ms */
+	unsigned long long wtime;	/* ms */
 	unsigned long long minflt;
 	unsigned long long majflt;
 	unsigned long long vsz;		/* kB */
@@ -264,7 +264,9 @@ static void
 build_snap(int s, pmResult *result)
 {
 	pmValueSet *utime_vset = NULL;
-	int m, i;
+	pmValueSet *vs[PCP_PID_NR];
+	struct pcp_pid_snap *p;
+	int m, i, idx, inst;
 
 	snap_clear(s);
 
@@ -279,12 +281,8 @@ build_snap(int s, pmResult *result)
 		return;
 
 	/* Build a vset index keyed by our enum for fast access */
-	pmValueSet *vs[PCP_PID_NR];
-
 	memset(vs, 0, sizeof(vs));
 	for (m = 0; m < result->numpmid; m++) {
-		int idx;
-
 		for (idx = 0; idx < PCP_PID_NR; idx++) {
 			if (result->vset[m]->pmid == pcp_pid_pmids[idx]) {
 				vs[idx] = result->vset[m];
@@ -294,25 +292,26 @@ build_snap(int s, pmResult *result)
 	}
 
 	for (i = 0; i < utime_vset->numval; i++) {
-		int inst = utime_vset->vlist[i].inst;
-		struct pcp_pid_snap *p = snap_alloc(s, inst);
+		inst = utime_vset->vlist[i].inst;
+		p = snap_alloc(s, inst);
+		if (!p)
+			continue;
 
-		/* CPU times: PCP delivers ms, pidstat display needs jiffies */
-#define MS_TO_J(ms)  ((ms) * hz / 1000)
-#define NS_TO_J(ns)  ((ns) * hz / 1000000000ULL)
-
+		/* CPU times stored in ms; PCP delivers utime/stime/gtime in ms,
+		 * wtime (blkio delay) in ns — convert ns to ms on store. */
 		if (vs[PCP_PID_UTIME])
-			p->utime = MS_TO_J(vset_u64(vs[PCP_PID_UTIME],
-						    &pcp_pid_descs[PCP_PID_UTIME], inst));
+			p->utime = vset_u64(vs[PCP_PID_UTIME],
+					    &pcp_pid_descs[PCP_PID_UTIME], inst);
 		if (vs[PCP_PID_STIME])
-			p->stime = MS_TO_J(vset_u64(vs[PCP_PID_STIME],
-						    &pcp_pid_descs[PCP_PID_STIME], inst));
+			p->stime = vset_u64(vs[PCP_PID_STIME],
+					    &pcp_pid_descs[PCP_PID_STIME], inst);
 		if (vs[PCP_PID_GTIME])
-			p->gtime = MS_TO_J(vset_u64(vs[PCP_PID_GTIME],
-						    &pcp_pid_descs[PCP_PID_GTIME], inst));
+			p->gtime = vset_u64(vs[PCP_PID_GTIME],
+					    &pcp_pid_descs[PCP_PID_GTIME], inst);
 		if (vs[PCP_PID_WTIME])
-			p->wtime = NS_TO_J(vset_u64(vs[PCP_PID_WTIME],
-						    &pcp_pid_descs[PCP_PID_WTIME], inst));
+			p->wtime = vset_u64(vs[PCP_PID_WTIME],
+					    &pcp_pid_descs[PCP_PID_WTIME], inst)
+				   / 1000000ULL;
 
 		/* Fault counters: raw counts */
 		if (vs[PCP_PID_MINFLT])
@@ -396,23 +395,26 @@ build_snap(int s, pmResult *result)
  * ------------------------------------------------------------------------- */
 
 static void
-display_interval(unsigned long long itv, unsigned long long deltot_jiffies,
-		 const char *timestamp)
+display_interval(unsigned long long itv, const char *timestamp)
 {
-	int i;
-	int dis = 1;  /* print header on first process */
+	unsigned long long itv_ms;
+	struct pcp_pid_snap *c, *p;
+	const char *cmd;
+	int i, dis = 1;
 
-	if (itv == 0)
-		itv = 1;
+	/* itv is in centiseconds; CPU times in snap are in ms (1 cs = 10 ms) */
+	itv_ms = itv * 10;
+	if (itv_ms == 0)
+		itv_ms = 1;
 
 	for (i = 0; i < snap_nr[1]; i++) {
-		struct pcp_pid_snap *c = &snap[1][i];
-		struct pcp_pid_snap *p = snap_find(0, c->inst_id);
-		const char *cmd = DISPLAY_CMDLINE(pidflag) && c->psargs[0]
-				  ? c->psargs : c->cmd;
+		c = &snap[1][i];
+		p = snap_find(0, c->inst_id);
+		cmd = DISPLAY_CMDLINE(pidflag) && c->psargs[0]
+		      ? c->psargs : c->cmd;
 
 		if (!p)
-			continue;  /* process not in previous sample */
+			continue;
 
 		/* -u: CPU */
 		if (DISPLAY_CPU(actflag)) {
@@ -420,10 +422,6 @@ display_interval(unsigned long long itv, unsigned long long deltot_jiffies,
 			unsigned long long dlt_stime = c->stime - p->stime;
 			unsigned long long dlt_gtime = c->gtime - p->gtime;
 			unsigned long long dlt_wtime = c->wtime - p->wtime;
-			/* itv * HZ / 100 = jiffies in interval */
-			unsigned long long itv_j = itv * hz / 100;
-
-			if (itv_j == 0) itv_j = 1;
 
 			if (dis) {
 				PRINT_ID_HDR(timestamp, pidflag);
@@ -442,17 +440,15 @@ display_interval(unsigned long long itv, unsigned long long deltot_jiffies,
 			printf(" %7.2f %7.2f %7.2f %7.2f %7.2f %5u  %s\n",
 			       /* %usr */
 			       (double)(dlt_utime - (dlt_utime < dlt_gtime ? 0
-						     : dlt_gtime)) / itv_j * 100,
+						     : dlt_gtime)) / itv_ms * 100,
 			       /* %system */
-			       (double)dlt_stime / itv_j * 100,
+			       (double)dlt_stime / itv_ms * 100,
 			       /* %guest */
-			       (double)dlt_gtime / itv_j * 100,
+			       (double)dlt_gtime / itv_ms * 100,
 			       /* %wait */
-			       (double)dlt_wtime / itv_j * 100,
+			       (double)dlt_wtime / itv_ms * 100,
 			       /* %CPU */
-			       deltot_jiffies
-			       ? (double)(dlt_utime + dlt_stime) / deltot_jiffies * 100
-			       : (double)(dlt_utime + dlt_stime) / itv_j * 100,
+			       (double)(dlt_utime + dlt_stime) / itv_ms * 100,
 			       /* CPU# */
 			       c->processor,
 			       /* Command */
@@ -555,13 +551,13 @@ display_interval(unsigned long long itv, unsigned long long deltot_jiffies,
 int
 pcp_pidstat_run(const char *archive)
 {
-	int ctx, sts, m;
+	struct pcp_pid_snap *tmp_snap;
+	pmID fetch_pmids[PCP_PID_NR];
 	pmResult *result = NULL, *prev_result = NULL;
 	struct timespec prev_tv = {0, 0};
 	char timestamp[32];
-	int first = 1;
-	pmID fetch_pmids[PCP_PID_NR];
-	int  fetch_nr = 0;
+	int ctx, sts, m, fetch_nr = 0;
+	int tmp_nr, tmp_cap, first = 1;
 
 	ctx = pmNewContext(PM_CONTEXT_ARCHIVE, archive);
 	if (ctx < 0) {
@@ -614,7 +610,7 @@ pcp_pidstat_run(const char *archive)
 
 			/* deltot_jiffies: not available from proc.* alone —
 			 * use 0 to fall back to per-process %CPU calculation. */
-			display_interval(itv, 0, timestamp);
+			display_interval(itv, timestamp);
 
 			/* Roll curr → prev */
 			if (prev_result)
@@ -623,9 +619,7 @@ pcp_pidstat_run(const char *archive)
 			result = NULL;
 
 			/* Swap snap buffers */
-			struct pcp_pid_snap *tmp_snap = snap[0];
-			int tmp_nr = snap_nr[0], tmp_cap = snap_cap[0];
-
+			tmp_snap = snap[0]; tmp_nr = snap_nr[0]; tmp_cap = snap_cap[0];
 			snap[0] = snap[1]; snap_nr[0] = snap_nr[1]; snap_cap[0] = snap_cap[1];
 			snap[1] = tmp_snap; snap_nr[1] = tmp_nr; snap_cap[1] = tmp_cap;
 		} else {
@@ -633,9 +627,7 @@ pcp_pidstat_run(const char *archive)
 			snap_sort(0);
 
 			/* Swap so [0]=prev, [1] ready for next fetch */
-			struct pcp_pid_snap *tmp_snap = snap[0];
-			int tmp_nr = snap_nr[0], tmp_cap = snap_cap[0];
-
+			tmp_snap = snap[0]; tmp_nr = snap_nr[0]; tmp_cap = snap_cap[0];
 			snap[0] = snap[1]; snap_nr[0] = snap_nr[1]; snap_cap[0] = snap_cap[1];
 			snap[1] = tmp_snap; snap_nr[1] = tmp_nr; snap_cap[1] = tmp_cap;
 

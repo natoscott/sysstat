@@ -109,25 +109,6 @@ scalar_u64(pmValueSet *vset)
 	return atom.ull;
 }
 
-static unsigned long long
-inst_u64(pmValueSet *vset, int inst_id)
-{
-	int i;
-
-	if (!vset) return 0;
-	for (i = 0; i < vset->numval; i++) {
-		if (vset->vlist[i].inst == inst_id) {
-			pmAtomValue atom;
-
-			if (pmExtractValue(vset->valfmt, &vset->vlist[i],
-					   PM_TYPE_U64, &atom, PM_TYPE_U64) < 0)
-				return 0;
-			return atom.ull;
-		}
-	}
-	return 0;
-}
-
 static void
 build_cpu_snap(int s, pmResult *result)
 {
@@ -169,24 +150,25 @@ build_cpu_snap(int s, pmResult *result)
 		if (cpu_id < 0 || cpu_id >= cpu_nr) continue;
 
 		scc = &st_cpu[s][cpu_id + 1];
-		scc->cpu_user       = inst_u64(vs[PCP_MPSTAT_PERCPU_USER],      cpu_id);
-		scc->cpu_nice       = inst_u64(vs[PCP_MPSTAT_PERCPU_NICE],      cpu_id);
-		scc->cpu_sys        = inst_u64(vs[PCP_MPSTAT_PERCPU_SYS],       cpu_id);
-		scc->cpu_idle       = inst_u64(vs[PCP_MPSTAT_PERCPU_IDLE],      cpu_id);
-		scc->cpu_iowait     = inst_u64(vs[PCP_MPSTAT_PERCPU_IOWAIT],    cpu_id);
-		scc->cpu_hardirq    = inst_u64(vs[PCP_MPSTAT_PERCPU_HARDIRQ],   cpu_id);
-		scc->cpu_softirq    = inst_u64(vs[PCP_MPSTAT_PERCPU_SOFTIRQ],   cpu_id);
-		scc->cpu_steal      = inst_u64(vs[PCP_MPSTAT_PERCPU_STEAL],     cpu_id);
-		scc->cpu_guest      = inst_u64(vs[PCP_MPSTAT_PERCPU_GUEST],     cpu_id);
-		scc->cpu_guest_nice = inst_u64(vs[PCP_MPSTAT_PERCPU_GUESTNICE], cpu_id);
+		scc->cpu_user       = pcp_inst_u64(vs[PCP_MPSTAT_PERCPU_USER],      cpu_id);
+		scc->cpu_nice       = pcp_inst_u64(vs[PCP_MPSTAT_PERCPU_NICE],      cpu_id);
+		scc->cpu_sys        = pcp_inst_u64(vs[PCP_MPSTAT_PERCPU_SYS],       cpu_id);
+		scc->cpu_idle       = pcp_inst_u64(vs[PCP_MPSTAT_PERCPU_IDLE],      cpu_id);
+		scc->cpu_iowait     = pcp_inst_u64(vs[PCP_MPSTAT_PERCPU_IOWAIT],    cpu_id);
+		scc->cpu_hardirq    = pcp_inst_u64(vs[PCP_MPSTAT_PERCPU_HARDIRQ],   cpu_id);
+		scc->cpu_softirq    = pcp_inst_u64(vs[PCP_MPSTAT_PERCPU_SOFTIRQ],   cpu_id);
+		scc->cpu_steal      = pcp_inst_u64(vs[PCP_MPSTAT_PERCPU_STEAL],     cpu_id);
+		scc->cpu_guest      = pcp_inst_u64(vs[PCP_MPSTAT_PERCPU_GUEST],     cpu_id);
+		scc->cpu_guest_nice = pcp_inst_u64(vs[PCP_MPSTAT_PERCPU_GUESTNICE], cpu_id);
 	}
 }
 
 int
 pcp_mpstat_run(const char *archive)
 {
-	int ctx, sts, i;
+	pmValueSet *percpu_vset;
 	pmResult *result = NULL, *prev_result = NULL;
+	int ctx, sts, i, m;
 	int first = 1, curr = 1;
 
 	ctx = pmNewContext(PM_CONTEXT_ARCHIVE, archive);
@@ -214,9 +196,7 @@ pcp_mpstat_run(const char *archive)
 			 * then use this result as the initial snapshot — no separate
 			 * probe needed (a second pmSetMode(NULL) does NOT rewind).
 			 */
-			pmValueSet *percpu_vset = NULL;
-			int m;
-
+			percpu_vset = NULL;
 			for (m = 0; m < result->numpmid; m++) {
 				if (result->vset[m]->pmid ==
 				    pcp_mpstat_pmids[PCP_MPSTAT_PERCPU_USER]) {
