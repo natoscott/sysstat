@@ -5872,7 +5872,7 @@ pcp_write_sadc_info_file(const char *archive_path)
  */
 void
 pcp_write_sadc_special_record(const char *comment, unsigned int cpu_nr,
-			      unsigned long long timestamp, long nsec)
+			      unsigned long long timestamp, unsigned int nsec)
 {
 	if (comment[0]) {
 		/* Comment: annotation only, no discontinuity mark */
@@ -5901,7 +5901,7 @@ pcp_write_sadc_special_record(const char *comment, unsigned int cpu_nr,
 		pmiPutAtomValueHandle(ACT_HANDLE(&sadc_metrics, SADC_ACTIVITIES, 0), &atom);
 	}
 
-	pmiHighResWrite((int64_t) timestamp, (int32_t) nsec);
+	pmiWrite(timestamp, nsec);
 	pmiEnd();
 }
 
@@ -6226,13 +6226,13 @@ void pcp_write_sadf_sample(unsigned long long ust_time)
 {
 	int rc;
 
-	if ((rc = pmiHighResWrite((int64_t)ust_time, 0)) < 0) {
+	if ((rc = pmiWrite(ust_time, 0)) < 0) {
 		/* Non-fatal: skip records with out-of-order timestamps (e.g. corrupt input) */
 		if (rc == PM_ERR_LOGREC)
 			fprintf(stderr, _("PCP: skipping out-of-order timestamp %llu: %s\n"),
 				ust_time, pmiErrStr(rc));
 		else {
-			fprintf(stderr, _("PCP: pmiHighResWrite: %s\n"), pmiErrStr(rc));
+			fprintf(stderr, _("PCP: pmiWrite: %s\n"), pmiErrStr(rc));
 			exit(4);
 		}
 	}
@@ -6428,12 +6428,12 @@ int pcp_open_sadc_archive(const char *path, const struct file_header *hdr)
  * 0 on success, negative PCP error code on failure.
  ***************************************************************************
  */
-int pcp_write_sadc_sample(unsigned long long ust_time, long nsec,
+int pcp_write_sadc_sample(unsigned long long ust_time, unsigned int nsec,
 			  uint64_t flags)
 {
 	int sts;
 
-	sts = pmiHighResWrite((int64_t)ust_time, (int32_t)nsec);
+	sts = pmiWrite(ust_time, nsec);
 	if (sts < 0)
 		fprintf(stderr, _("PCP write error: %s\n"), pmiErrStr(sts));
 	return sts;
@@ -6481,9 +6481,8 @@ pcp_sadc_volume_rotate(const char *vol_path)
 	pid_t pid = fork();
 
 	if (pid == 0) {
-		execlp("pmlogcompress", "pmlogcompress", vol_path,
-		       (char *)NULL);
-		_exit(1);	/* pmlogcompress not in PATH; sa2 compresses nightly */
+		execlp("zstd", "zstd", "--rm", vol_path, (char *)NULL);
+		_exit(1);	/* zstd not in PATH; sa2 compresses nightly */
 	}
 	/* parent continues; child reaped by existing SIGCHLD/SIGALRM handling */
 }

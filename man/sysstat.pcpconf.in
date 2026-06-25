@@ -32,14 +32,6 @@ Key\-value pairs controlling collection behaviour.
 .BI "volume_size = " bytes
 Maximum PCP data volume size in bytes before automatic rotation.
 Set to 0 to disable in-session rotation.  Default: 0.
-.SS "[pmdas]"
-One PMDA name per line.  Each entry is passed to
-.BR pmSpecLocalPMDA (3)
-before opening the local context.  The
-.B proc
-PMDA is always loaded automatically; entries in this section add
-optional extras such as
-.BR linux .
 .SS "[metrics]"
 One metric name per line.  Both leaf metric names
 (e.g.\&
@@ -47,21 +39,28 @@ One metric name per line.  Both leaf metric names
 and namespace node names
 (e.g.\&
 .IR proc.psinfo )
-are accepted; namespace nodes are expanded to all leaf metrics
-beneath them via
-.BR pmTraversePMNS (3).
+are accepted; namespace nodes are expanded to all leaf metrics beneath them.
 .PP
 Metrics whose PMID is already registered by
 .BR sadc 's
 built-in write path are silently skipped to avoid double-writes.
 Unknown metric names are skipped with a warning on stderr.
+.PP
+To list all metrics available from the local PMDA context, run:
+.PP
+.RS
+.B pminfo \-L
+.RE
+.PP
+To inspect a specific metric or subtree (e.g. for description and units), run:
+.PP
+.RS
+.B pminfo \-L \-\-desc \-\-oneline proc.psinfo
+.RE
 .SH EXAMPLE
 .nf
 [settings]
-interval = 15
-
-[pmdas]
-# linux
+volume_size = 104857600
 
 [metrics]
 proc.nprocs
@@ -99,8 +98,7 @@ section.
 .BR sadc (8),
 .BR sa1 (8),
 .BR sa2 (8),
-.BR pmSpecLocalPMDA (3),
-.BR pmTraversePMNS (3),
-.BR sysstat (5)
+.BR sysstat (5),
+.BR pminfo (1)
 .SH AUTHOR
 Sebastien Godard (sysstat <at> orange.fr)

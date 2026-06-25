@@ -60,8 +60,7 @@ int  pcp_local_init(struct pcp_local_config *cfg, const char *conffile);
 void pcp_local_register(struct pcp_local_config *cfg);
 
 /* Fetch and write local-context metrics at this timestamp */
-void pcp_local_write(struct pcp_local_config *cfg,
-		     unsigned long long ust_time, long nsec);
+void pcp_local_write(struct pcp_local_config *cfg);
 
 /* Return local context handle for help-text lookups */
 int  pcp_local_get_ctx(void);

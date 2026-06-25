@@ -1132,7 +1132,7 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 {
 	int do_sa_rotat = 0;
 	uint64_t save_flags;
-	long record_hdr_ust_nsec;
+	unsigned int record_hdr_ust_nsec;
 	char new_ofile[MAX_FILE_LEN] = "";
 	struct tm rectime = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NULL};
 
@@ -1148,9 +1148,7 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 		reset_stats();
 		memset(&record_hdr, 0, RECORD_HEADER_SIZE);
 
-		/* Save time; nsec companion used for sub-second PCP timestamp precision */
-		record_hdr.ust_time = (unsigned long long) get_time_nsec(&rectime, 0,
-								       &record_hdr_ust_nsec);
+		record_hdr.ust_time = (unsigned long long) get_time_nsec(&rectime, 0, &record_hdr_ust_nsec);
 		record_hdr.hour     = rectime.tm_hour;
 		record_hdr.minute   = rectime.tm_min;
 		record_hdr.second   = rectime.tm_sec;
@@ -1194,22 +1192,7 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 
 			/* Local PMDA metrics collected on every sample */
 			if (local_cfg.num_metrics > 0) {
-				/*
-				 * pcp_local_write is not async-signal-safe
-				 * (uses malloc/realloc internally).  Block
-				 * signals for its duration to prevent heap
-				 * corruption if a signal fires mid-allocation.
-				 */
-				sigset_t block_set, old_set;
-				sigemptyset(&block_set);
-				sigaddset(&block_set, SIGTERM);
-				sigaddset(&block_set, SIGINT);
-				sigaddset(&block_set, SIGALRM);
-				sigprocmask(SIG_BLOCK, &block_set, &old_set);
-				pcp_local_write(&local_cfg,
-						record_hdr.ust_time,
-						record_hdr_ust_nsec);
-				sigprocmask(SIG_SETMASK, &old_set, NULL);
+				pcp_local_write(&local_cfg);
 			}
 
 			pcp_write_uptime(record_hdr.uptime_cs);
@@ -1648,9 +1631,8 @@ int main(int argc, char **argv)
 		}
 
 		/*
-		 * Initialise local PMDA context before pmiStart so that
-		 * pmSpecLocalPMDA calls (from sysstat.pcpconf [pmdas]) take
-		 * effect.  Errors here are non-fatal; we just skip local metrics.
+		 * Initialise local PMDA context before pmiStart.
+		 * Errors here are non-fatal; we just skip local metrics.
 		 * PCP_CONF env var overrides the default config path (for testing).
 		 */
 		{
@@ -1909,9 +1891,12 @@ pcp_init_done:	;
 #ifdef HAVE_PMI_APPEND
 		if (WRITE_PCP_OUTPUT(flags)) {
 			struct tm pcp_rectime = {0};
-			long pcp_nsec;
+			unsigned int pcp_nsec;
 
-			/* Get sub-second timestamp for PCP (write_special_record only uses second precision) */
+			/*
+			 * Get sub-second timestamp for PCP
+			 * (write_special_record only uses second precision)
+			 */
 			record_hdr.ust_time = (unsigned long long)
 				get_time_nsec(&pcp_rectime, 0, &pcp_nsec);
 			pcp_write_sadc_special_record(comment,

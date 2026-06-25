@@ -41,8 +41,7 @@ int pcp_local_get_ctx(void) { return local_ctx; }
 
 #define SECTION_NONE     0
 #define SECTION_SETTINGS 1
-#define SECTION_PMDAS    2
-#define SECTION_METRICS  3
+#define SECTION_METRICS  2
 
 /* Growing string list used during config parsing and PMNS traversal */
 struct strlist {
@@ -103,9 +102,7 @@ static char *strip(char *s)
  *
  * IN:
  * @conffile	Path to configuration file.
- * @pmdas	Output: list of PMDA names from [pmdas] section.
  * @raw_metrics	Output: list of raw metric names from [metrics] section.
- * @interval	Output: local sampling interval (seconds).
  * @volume_size	Output: data volume rotation size (bytes, 0 = disabled).
  *
  * RETURNS:
@@ -113,8 +110,7 @@ static char *strip(char *s)
  ***************************************************************************
  */
 static int
-parse_config(const char *conffile, struct strlist *pmdas,
-	     struct strlist *raw_metrics, size_t *volume_size)
+parse_config(const char *conffile, struct strlist *raw_metrics, size_t *volume_size)
 {
 	FILE *fp;
 	char line[1024];
@@ -139,8 +135,6 @@ parse_config(const char *conffile, struct strlist *pmdas,
 			p++;
 			if (!strcmp(p, "settings"))
 				section = SECTION_SETTINGS;
-			else if (!strcmp(p, "pmdas"))
-				section = SECTION_PMDAS;
 			else if (!strcmp(p, "metrics"))
 				section = SECTION_METRICS;
 			else
@@ -160,9 +154,6 @@ parse_config(const char *conffile, struct strlist *pmdas,
 				*volume_size = (size_t)strtoull(val, NULL, 10);
 			break;
 		}
-		case SECTION_PMDAS:
-			strlist_add(pmdas, p);
-			break;
 		case SECTION_METRICS:
 			strlist_add(raw_metrics, p);
 			break;
@@ -378,29 +369,19 @@ local_metric_add(struct pcp_local_config *cfg, const char *name)
 int
 pcp_local_init(struct pcp_local_config *cfg, const char *conffile)
 {
-	struct strlist pmdas = {0}, raw_metrics = {0};
+	struct strlist raw_metrics = {0};
 	size_t volume_size;
 	size_t i;
 	int sts;
 
 	memset(cfg, 0, sizeof(*cfg));
 
-	if (parse_config(conffile, &pmdas, &raw_metrics, &volume_size) < 0) {
-		strlist_free(&pmdas);
+	if (parse_config(conffile, &raw_metrics, &volume_size) < 0) {
 		strlist_free(&raw_metrics);
 		return -1;
 	}
 
 	cfg->volume_size = volume_size;
-
-	/* Load additional PMDAs before opening the local context */
-	for (i = 0; i < pmdas.count; i++) {
-		if (pmSpecLocalPMDA(pmdas.items[i]) == NULL)
-			fprintf(stderr,
-				_("PCP local: cannot load PMDA '%s'\n"),
-				pmdas.items[i]);
-	}
-	strlist_free(&pmdas);
 
 	/*
 	 * Point libpcp at the local DSO PMDA configuration and namespace so
@@ -518,23 +499,18 @@ pcp_local_register(struct pcp_local_config *cfg)
  ***************************************************************************
  * Fetch and write local-context metrics into the PMI pending buffer.
  * Called from the sadc main loop when the local interval has elapsed.
- * Does NOT call pmiHighResWrite — that is done by the main loop.
+ * Does NOT call pmiWrite — that is done by the main loop.
  *
  * IN:
  * @cfg		Local metric configuration.
- * @ust_time	Current sample timestamp (seconds since epoch).
- * @nsec	Nanosecond part of the timestamp.
  ***************************************************************************
  */
 void
-pcp_local_write(struct pcp_local_config *cfg,
-		unsigned long long ust_time, long nsec)
+pcp_local_write(struct pcp_local_config *cfg)
 {
 	pmResult *result = NULL;
 	int saved_ctx, sts;
 	size_t i;
-
-	(void)ust_time; (void)nsec;	/* timestamp used by caller's pmiHighResWrite */
 
 	if (!cfg->num_metrics || local_ctx < 0)
 		return;

@@ -191,7 +191,7 @@ time_t get_time(struct tm *rectime, int d_off)
  * Value of time in seconds since the Epoch, or (time_t) -1 on error.
  ***************************************************************************
  */
-time_t get_xtime_nsec(struct tm *rectime, int d_off, int utc, long *nsec)
+time_t get_xtime_nsec(struct tm *rectime, int d_off, int utc, unsigned int *nsec)
 {
 	time_t timer;
 #ifdef TEST
@@ -204,7 +204,7 @@ time_t get_xtime_nsec(struct tm *rectime, int d_off, int utc, long *nsec)
 	if (clock_gettime(CLOCK_REALTIME, &ts) < 0)
 		return (time_t) -1;
 	timer = ts.tv_sec - (time_t) SEC_PER_DAY * d_off;
-	*nsec = ts.tv_nsec;
+	*nsec = (unsigned int) ts.tv_nsec;
 #endif
 
 	if (utc) {
@@ -234,7 +234,7 @@ time_t get_xtime_nsec(struct tm *rectime, int d_off, int utc, long *nsec)
  * Value of time in seconds since the Epoch, or (time_t) -1 on error.
  ***************************************************************************
  */
-time_t get_time_nsec(struct tm *rectime, int d_off, long *nsec)
+time_t get_time_nsec(struct tm *rectime, int d_off, unsigned int *nsec)
 {
 	static int utc = 0;
 
