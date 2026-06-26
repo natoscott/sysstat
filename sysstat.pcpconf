@@ -149,8 +149,14 @@ tape.dev.other_cnt
 tape.dev.resid_cnt
 tape.dev.io_ns
 
+# Per-device disk statistics (-a option for iostat and pcp-iostat)
+# disk.dev.* is in the linux PMDA, loaded automatically via PM_CONTEXT_LOCAL.
+# Metrics already written by sadc's built-in disk activity (-S XDISK) are
+# silently skipped, so this entry is safe to leave in regardless.
+disk.dev
+
 # CIFS/SMB filesystem statistics (-a option for cifsiostat)
-# Requires the CIFS PMDA loaded via [pmdas] above
+# Requires the CIFS PMDA, loaded automatically via PM_CONTEXT_LOCAL.
 cifs.fs.read
 cifs.fs.read_bytes
 cifs.fs.write
