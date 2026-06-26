@@ -5835,15 +5835,15 @@ pcp_write_sadc_header(long interval_secs)
 
 /*
  ***************************************************************************
- * Register sadc with the PCP import tool discovery mechanism so that
- * pmdapmimport can serve pmimport.* metrics for this sadc instance.
+ * Register sadc with pmdapmimport via pmiSetImportProgram() so that
+ * metrics for this instance are discoverable in /var/run/pmimport.
  *
  * IN:
  * @archive_path	Full path to the current PCP archive base.
  ***************************************************************************
  */
 void
-pcp_write_sadc_info_file(const char *archive_path)
+pcp_register_import_program(const char *archive_path)
 {
 	char	abuf[512];
 

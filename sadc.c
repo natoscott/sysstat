@@ -1264,7 +1264,7 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 				pcp_close_sadc_archive();
 				pmstrncpy(pcp_archive, sizeof(pcp_archive), ofile);
 				pcp_open_sadc_archive(pcp_archive, &file_hdr);
-				pcp_write_sadc_info_file(pcp_archive);
+				pcp_register_import_program(pcp_archive);
 				pcp_write_file_header_metrics(&file_hdr);
 				pcp_write_sadc_header(interval);
 				for (p = 0; p < NR_ACT; p++) {
@@ -1657,8 +1657,8 @@ int main(int argc, char **argv)
 			goto pcp_init_done;
 		}
 
-		/* Write SA_DIR/.sadc.info for cheap consumption by pmdapmcd */
-		pcp_write_sadc_info_file(pcp_archive);
+		/* Register with pmdapmimport via /var/run/pmimport */
+		pcp_register_import_program(pcp_archive);
 
 		/* Register local metrics into the now-open PMI write context */
 		pcp_local_register(&local_cfg);
