@@ -49,3 +49,22 @@ proc.id.uid
 proc.id.uid_nm
 proc.fd.count
 proc.schedstat.run_delay
+
+# Per-device disk statistics (used by sadc/sar/iostat replay).
+# Silently skipped if sadc's built-in disk activity (-S XDISK) is enabled.
+disk.dev.read
+disk.dev.write
+disk.dev.total
+disk.dev.total_bytes
+disk.dev.read_bytes
+disk.dev.write_bytes
+disk.dev.discard_bytes
+disk.dev.read_rawactive
+disk.dev.write_rawactive
+disk.dev.total_rawactive
+disk.dev.discard_rawactive
+disk.dev.avactive
+disk.dev.aveq
+disk.dev.blkread
+disk.dev.blkwrite
+disk.dev.discard
