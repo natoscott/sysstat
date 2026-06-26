@@ -1,15 +1,20 @@
 # @PACKAGE_NAME@-@PACKAGE_VERSION@ PCP local metric collection configuration.
 #
-# Read by sadc when writing PCP archives (-O pcp or -O sa+pcp).
-# Changes take effect on the next sadc restart.
+# This file configures collection of metrics from any PCP DSO PMDA alongside
+# the standard system-wide sysstat metrics.  The default set covers
+# per-process metrics (pidstat), CIFS filesystem statistics (cifsiostat),
+# and tape drive statistics (tapestat).
 #
+# When sadc is configured to write PCP archives (PCP_SA_OPTIONS="-O sa+pcp"
+# or "-O pcp" in /etc/sysconfig/sysstat), metrics listed here are collected
+# from a local PMDA context at the configured interval and stored in the same
+# PCP archive.  Tools such as "pidstat -a", "iostat -a", and "mpstat -a" can
+# then replay these metrics historically from the archive.
+#
+# Changes take effect on the next sadc restart.
 # See sysstat.pcpconf(5) and sadc(8) for details.
 
 [settings]
-# Sampling interval for local-context metrics (seconds).
-# Should be >= the sadc collection interval.  Default: 15 seconds.
-interval = 15
-
 # Maximum PCP archive data volume size before automatic rotation (bytes).
 # Set to 0 to disable in-session rotation.
 volume_size = 104857600
@@ -19,39 +24,131 @@ volume_size = 104857600
 # are expanded to all leaves beneath them.  Metrics already collected by
 # sadc's built-in path are silently skipped.
 #
-# The default set below covers the metrics needed by pcp-pidstat(1).
+# Mapping to pidstat display columns:
+#   -u (CPU)  : proc.psinfo.utime, stime, guest_time, processor
+#               proc.psinfo.minflt, maj_flt (fault rates)
+#               proc.schedstat.run_delay (%wait)
+#   -r (mem)  : proc.psinfo.vsize (VSZ), proc.psinfo.rss (RSS)
+#               proc.psinfo.minflt, maj_flt (fault rates)
+#               proc.memory.vmstack (StkSize, -s option)
+#   -d (I/O)  : proc.io.read_bytes, write_bytes, cancelled_write_bytes
+#   -w (ctx)  : proc.psinfo.vctxsw, nvctxsw
+#   -t (thr)  : proc.psinfo.threads
+#   -v (fd)   : proc.fd.count
+#   -I (rt)   : proc.psinfo.rt_priority, policy
+#   id fields : proc.psinfo.pid, cmd, psargs, wchan_s
+#               proc.id.uid, uid_nm
+#
 # See also: /etc/pcp/pmlogconf/tools/pidstat
-#           /etc/pcp/pmlogconf/tools/atop-proc
+#           /var/lib/pcp/config/pmlogconf/tools/atop-proc
+
+# Process count
 proc.nprocs
-proc.psinfo.pid
-proc.psinfo.cmd
+
+# CPU statistics (-u)
 proc.psinfo.utime
 proc.psinfo.stime
 proc.psinfo.guest_time
-proc.psinfo.minflt
-proc.psinfo.maj_flt
-proc.psinfo.vsize
-proc.psinfo.rss
 proc.psinfo.processor
-proc.psinfo.rt_priority
-proc.psinfo.policy
-proc.psinfo.threads
-proc.psinfo.vctxsw
-proc.psinfo.nvctxsw
-proc.psinfo.wchan_s
-proc.psinfo.psargs
-proc.memory.vmstack
-proc.io.rchar
-proc.io.wchar
-proc.io.read_bytes
-proc.io.write_bytes
-proc.id.uid
-proc.id.uid_nm
-proc.fd.count
 proc.schedstat.run_delay
 
-# Per-device disk statistics (used by sadc/sar/iostat replay).
-# Silently skipped if sadc's built-in disk activity (-S XDISK) is enabled.
+# Fault rates (used by both -u and -r)
+proc.psinfo.minflt
+proc.psinfo.maj_flt
+
+# Memory statistics (-r)
+proc.psinfo.vsize
+proc.psinfo.rss
+proc.memory.vmdata
+proc.memory.vmexe
+proc.memory.vmlib
+proc.memory.vmlock
+proc.memory.vmswap
+proc.memory.share
+
+# Stack statistics (-s)
+proc.memory.vmstack
+
+# I/O statistics (-d)
+proc.io.read_bytes
+proc.io.write_bytes
+proc.io.cancelled_write_bytes
+
+# Context switch statistics (-w)
+proc.psinfo.vctxsw
+proc.psinfo.nvctxsw
+
+# Thread count (-t)
+proc.psinfo.threads
+
+# File descriptor count (-v)
+proc.fd.count
+
+# Real-time scheduling (-I)
+proc.psinfo.rt_priority
+proc.psinfo.policy
+
+# Process identification
+proc.psinfo.pid
+proc.psinfo.cmd
+proc.psinfo.psargs
+proc.psinfo.wchan_s
+proc.psinfo.nice
+proc.psinfo.priority
+proc.psinfo.start_time
+proc.id.uid
+proc.id.uid_nm
+proc.id.euid
+proc.id.euid_nm
+proc.id.gid
+proc.id.egid
+proc.namespaces.envid
+
+# NUMA per-node CPU statistics
+# Provides per-NUMA-node CPU breakdowns for atop-summary NUMA view.
+# kernel.pernode.cpu.user
+# kernel.pernode.cpu.nice
+# kernel.pernode.cpu.sys
+# kernel.pernode.cpu.idle
+# kernel.pernode.cpu.wait.total
+# kernel.pernode.cpu.irq.hard
+# kernel.pernode.cpu.irq.soft
+# kernel.pernode.cpu.steal
+# kernel.pernode.cpu.guest
+
+# NUMA memory statistics
+# mem.numa.util.free
+# mem.numa.util.total
+# mem.numa.util.active
+# mem.numa.util.inactive
+# mem.numa.util.dirty
+# mem.numa.util.filePages
+# mem.numa.util.slab
+# mem.numa.util.shmem
+
+# Hardware inventory
+# hinv.nnode          — number of NUMA nodes
+# hinv.map.cpu_node   — per-CPU NUMA node mapping
+# hinv.map.dmname     — device-mapper device name mapping
+# hinv.map.mdname     — md-raid device name mapping
+
+# Tape drive statistics (-a option for tapestat)
+# tape.dev.* is in the linux PMDA, loaded automatically via PM_CONTEXT_LOCAL
+tape.dev.read_cnt
+tape.dev.read_byte_cnt
+tape.dev.read_ns
+tape.dev.write_cnt
+tape.dev.write_byte_cnt
+tape.dev.write_ns
+tape.dev.other_cnt
+tape.dev.resid_cnt
+tape.dev.io_ns
+
+# Per-device disk statistics (-a option for iostat and pcp-iostat)
+# These are the metrics used by sadc/sar/iostat replay.  Listing them
+# individually avoids pulling in the full disk.dev.* namespace.
+# Metrics already written by sadc's built-in disk activity (-S XDISK) are
+# silently skipped, so these entries are safe to leave in regardless.
 disk.dev.read
 disk.dev.write
 disk.dev.total
@@ -68,3 +165,13 @@ disk.dev.aveq
 disk.dev.blkread
 disk.dev.blkwrite
 disk.dev.discard
+
+# CIFS/SMB filesystem statistics (-a option for cifsiostat)
+# Requires the CIFS PMDA, loaded automatically via PM_CONTEXT_LOCAL.
+cifs.fs.read
+cifs.fs.read_bytes
+cifs.fs.write
+cifs.fs.write_bytes
+cifs.ops.open
+cifs.ops.close
+cifs.ops.delete

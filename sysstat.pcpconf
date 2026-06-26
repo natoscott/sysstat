@@ -104,7 +104,7 @@ proc.id.gid
 proc.id.egid
 proc.namespaces.envid
 
-# NUMA per-node CPU statistics (requires linux PMDA via [pmdas] above)
+# NUMA per-node CPU statistics
 # Provides per-NUMA-node CPU breakdowns for atop-summary NUMA view.
 # kernel.pernode.cpu.user
 # kernel.pernode.cpu.nice
@@ -116,7 +116,7 @@ proc.namespaces.envid
 # kernel.pernode.cpu.steal
 # kernel.pernode.cpu.guest
 
-# NUMA memory statistics (requires linux PMDA)
+# NUMA memory statistics
 # mem.numa.util.free
 # mem.numa.util.total
 # mem.numa.util.active
@@ -126,12 +126,7 @@ proc.namespaces.envid
 # mem.numa.util.slab
 # mem.numa.util.shmem
 
-# Network interface physical properties (requires linux PMDA)
-# network.interface.baudrate
-# network.interface.duplex
-# network.interface.wireless
-
-# Hardware inventory (requires linux PMDA)
+# Hardware inventory
 # hinv.nnode          — number of NUMA nodes
 # hinv.map.cpu_node   — per-CPU NUMA node mapping
 # hinv.map.dmname     — device-mapper device name mapping
