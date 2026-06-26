@@ -5763,10 +5763,14 @@ build_sadc_activities_string(char *buf, size_t len)
  */
 static const char *sadc_metric_oneline[] = {
 	[SADC_VERSION]    = "sysstat version that created this archive",
-	[SADC_ACTIVITIES] = "comma-separated list of collected sysstat activities",
+	[SADC_ACTIVITIES] = "sysstat activities collected (comma-separated)",
 	[SADC_INTERVAL]   = "nominal collection interval in seconds",
 	[SADC_COMMENT]    = "operator comment inserted at this timestamp",
 	[SADC_RESTARTS]   = "system restart event (value=1 at restart timestamps)",
+	[SADC_ARCHIVE]    = "archive base path",
+	[SADC_HOSTNAME]   = "hostname of the monitored system",
+	[SADC_TIMEZONE]   = "timezone of the monitored system",
+	[SADC_ZONEINFO]   = "Olson timezone name of the monitored system",
 };
 
 void
@@ -5787,35 +5791,42 @@ pcp_register_sadc_metrics(void)
 
 /*
  ***************************************************************************
- * Register sadc self-description metrics and write their initial values.
- * Called once when a PCP archive is first opened and again after each
- * restart mark (in case sadc was upgraded between sessions).
+ * Register pmimport metrics and write their values at archive open time.
+ * Called once per archive (initial open and daily rotation).
  *
  * Metrics written:
- *   sadc.version    - sysstat version string
- *   sadc.activities - comma-separated list of collected activities
- *   sadc.interval   - collection interval in seconds (first open only)
- *   sadc.comment    - pre-registered for later use at comment time
+ *   pmimport.version       - sysstat version string
+ *   pmimport.args          - comma-separated list of collected activities
+ *   pmimport.sadc.interval - collection interval in seconds (when > 0)
+ *   pmimport.sadc.comment  - pre-registered for later use at comment time
+ *   pmimport.archive       - archive base path
+ *   pmimport.hostname      - hostname of the monitored system
+ *   pmimport.timezone      - timezone name from the sa file header
+ *   pmimport.zoneinfo      - Olson timezone name
  *
- * A context label {"sadc":true} is added at first open so that tools
- * can identify a sadc-created archive via 'pminfo -l'.
+ * A context label {"sadc":true} is written so that tools can identify
+ * a sadc-created archive via 'pminfo -l'.
  *
  * IN:
- * @interval_secs	Collection interval in seconds, or -1 if this is
- *			not a normal collection invocation (sadc.interval
- *			is then omitted).
+ * @path		Archive base path.
+ * @hdr			File header supplying hostname and timezone.
+ * @interval_secs	Collection interval in seconds, or <= 0 if this is
+ *			not a normal collection invocation.
  ***************************************************************************
  */
 void
-pcp_write_sadc_header(long interval_secs)
+pcp_write_import_metrics(const char *path, const struct file_header *hdr,
+			 long interval_secs)
 {
 	char		abuf[1024];
 	pmAtomValue	atom;
+	/* Private libpcp helper — returns the Olson timezone name */
+	extern const char *__pmZoneinfo(void);
 
 	/* Context label: presence of "sadc":true identifies the archive */
 	pmiPutLabel(PM_LABEL_CONTEXT, 0, 0, "sadc", "true");
 
-	/* Register all sadc.* metrics and populate handles */
+	/* Register all pmimport metrics and populate handles */
 	pcp_register_sadc_metrics();
 
 	atom.cp = VERSION;
@@ -5825,12 +5836,23 @@ pcp_write_sadc_header(long interval_secs)
 	atom.cp = abuf;
 	pmiPutAtomValueHandle(ACT_HANDLE(&sadc_metrics, SADC_ACTIVITIES, 0), &atom);
 
-	/* sadc.interval — only meaningful for normal collection invocations */
 	if (interval_secs > 0) {
 		atom.ul = (unsigned long)interval_secs;
 		pmiPutAtomValueHandle(ACT_HANDLE(&sadc_metrics, SADC_INTERVAL, 0), &atom);
 	}
-	/* sadc.comment is pre-registered so it always appears in .meta */
+	/* pmimport.sadc.comment is pre-registered so it always appears in .meta */
+
+	atom.cp = (char *)path;
+	pmiPutAtomValueHandle(ACT_HANDLE(&sadc_metrics, SADC_ARCHIVE, 0), &atom);
+
+	atom.cp = (char *)hdr->sa_nodename;
+	pmiPutAtomValueHandle(ACT_HANDLE(&sadc_metrics, SADC_HOSTNAME, 0), &atom);
+
+	atom.cp = (char *)hdr->sa_tzname;
+	pmiPutAtomValueHandle(ACT_HANDLE(&sadc_metrics, SADC_TIMEZONE, 0), &atom);
+
+	atom.cp = (char *)__pmZoneinfo();
+	pmiPutAtomValueHandle(ACT_HANDLE(&sadc_metrics, SADC_ZONEINFO, 0), &atom);
 }
 
 /*
@@ -5924,7 +5946,7 @@ pcp_read_sadc_metrics(char **version, long *interval)
 	pmID		pmids[2];
 	pmDesc		descs[2];
 	pmResult	*result;
-	const char	*names[2] = {"sadc.version", "sadc.interval"};
+	const char	*names[2] = {"pmimport.version", "pmimport.sadc.interval"};
 	int		n = 0, sts;
 
 	if (version)  *version  = NULL;

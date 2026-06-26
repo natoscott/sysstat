@@ -1266,7 +1266,7 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 				pcp_open_sadc_archive(pcp_archive, &file_hdr);
 				pcp_register_import_program(pcp_archive);
 				pcp_write_file_header_metrics(&file_hdr);
-				pcp_write_sadc_header(interval);
+				pcp_write_import_metrics(pcp_archive, &file_hdr, interval);
 				for (p = 0; p < NR_ACT; p++) {
 					if (!IS_COLLECTED(act[p]->options) ||
 					    !act[p]->f_pcp_print)
@@ -1582,8 +1582,11 @@ int main(int argc, char **argv)
 	 * the activities collected AND the activity sequence to that
 	 * of the file, and the activities collected and activity sequence
 	 * written on STDOUT must be consistent to those of the file.
+	 * Skip native file creation in PCP-only mode; ofile already holds
+	 * the resolved path (used as the PCP archive base).
 	 */
-	open_ofile(&ofd, ofile, restart_mark);
+	if (!WRITE_PCP_ONLY(flags))
+		open_ofile(&ofd, ofile, restart_mark);
 	open_stdout(&stdfd);
 
 #ifdef HAVE_PMI_APPEND
@@ -1685,7 +1688,7 @@ int main(int argc, char **argv)
 			act[get_activity_position(act, A_NET_DEV, EXIT_IF_NOT_FOUND)]->nr_ini,
 			(unsigned long long) time(NULL),
 			system_uptime);
-		pcp_write_sadc_header(interval);
+		pcp_write_import_metrics(pcp_archive, &file_hdr, interval);
 
 		/*
 		 * pcp_print_*_stats() functions access both buf[0] (current)

@@ -109,7 +109,8 @@ __print_funct_t pcp_print_psimem_stats
 
 /* sadc self-description and event functions */
 void pcp_register_sadc_metrics(void);
-void pcp_write_sadc_header(long interval_secs);
+void pcp_write_import_metrics(const char *path, const struct file_header *hdr,
+			      long interval_secs);
 void pcp_register_import_program(const char *archive_path);
 void pcp_write_sadc_special_record(const char *comment, unsigned int cpu_nr,
 				   unsigned long long timestamp, unsigned int nsec);
@@ -118,6 +119,7 @@ void pcp_write_sadc_special_record(const char *comment, unsigned int cpu_nr,
 void check_pcpfile_actlist(const char *from_file, struct activity *act[], uint64_t flags);
 int read_stats_from_result(pmResult *result, struct file_header *header, int curr);
 void pcp_read_sadc_metrics(char **version, long *interval);
+
 
 /* sadf->PCP write-path wrappers (no PMI calls in sadf_misc.c) */
 void pcp_write_activity_help(struct activity *act[], int nact);

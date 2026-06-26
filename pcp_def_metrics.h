@@ -122,15 +122,23 @@ enum {
 	SADC_INTERVAL,		/* u32:    nominal collection interval in seconds */
 	SADC_COMMENT,		/* string: operator comment text */
 	SADC_RESTARTS,		/* u32:    restart event flag (value=1 at restart timestamps) */
+	SADC_ARCHIVE,		/* string: archive base path */
+	SADC_HOSTNAME,		/* string: hostname of the monitored system */
+	SADC_TIMEZONE,		/* string: timezone name (e.g. UTC+10) */
+	SADC_ZONEINFO,		/* string: Olson timezone name (e.g. Australia/Sydney) */
 	SADC_METRIC_COUNT /*end*/
 };
 
-/* PCP domain 40 is reserved for sysstat/sadc metrics */
-#define PMID_SADC_VERSION	PMI_ID(40, 0, 0)
-#define PMID_SADC_ACTIVITIES	PMI_ID(40, 0, 1)
-#define PMID_SADC_INTERVAL	PMI_ID(40, 0, 2)
-#define PMID_SADC_COMMENT	PMI_ID(40, 0, 3)
-#define PMID_SADC_RESTARTS	PMI_ID(40, 0, 4)
+/* pmimport PMDA domain 43; clusters 0-1 are standard, cluster 2 is sadc-specific */
+#define PMID_SADC_VERSION	PMI_ID(43, 0, 1)	/* pmimport.version */
+#define PMID_SADC_ACTIVITIES	PMI_ID(43, 0, 2)	/* pmimport.args */
+#define PMID_SADC_INTERVAL	PMI_ID(43, 2, 0)	/* pmimport.sadc.interval */
+#define PMID_SADC_COMMENT	PMI_ID(43, 2, 1)	/* pmimport.sadc.comment */
+#define PMID_SADC_RESTARTS	PMI_ID(43, 2, 2)	/* pmimport.sadc.restarts */
+#define PMID_SADC_ARCHIVE	PMI_ID(43, 0, 0)	/* pmimport.archive */
+#define PMID_SADC_HOSTNAME	PMI_ID(43, 1, 0)	/* pmimport.hostname */
+#define PMID_SADC_TIMEZONE	PMI_ID(43, 1, 1)	/* pmimport.timezone */
+#define PMID_SADC_ZONEINFO	PMI_ID(43, 1, 2)	/* pmimport.zoneinfo */
 
 extern const char *sadc_metric_names[];
 extern pmDesc sadc_metric_descs[];

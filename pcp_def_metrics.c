@@ -562,11 +562,15 @@ struct act_metrics record_header_metrics = {
  * All metrics use scalar static handles (one slot, no instance domain).
  */
 const char *sadc_metric_names[] = {
-	[SADC_VERSION]    = "sadc.version",
-	[SADC_ACTIVITIES] = "sadc.activities",
-	[SADC_INTERVAL]   = "sadc.interval",
-	[SADC_COMMENT]    = "sadc.comment",
-	[SADC_RESTARTS]   = "sadc.restarts",
+	[SADC_VERSION]    = "pmimport.version",
+	[SADC_ACTIVITIES] = "pmimport.args",
+	[SADC_INTERVAL]   = "pmimport.sadc.interval",
+	[SADC_COMMENT]    = "pmimport.sadc.comment",
+	[SADC_RESTARTS]   = "pmimport.sadc.restarts",
+	[SADC_ARCHIVE]    = "pmimport.archive",
+	[SADC_HOSTNAME]   = "pmimport.hostname",
+	[SADC_TIMEZONE]   = "pmimport.timezone",
+	[SADC_ZONEINFO]   = "pmimport.zoneinfo",
 };
 pmDesc sadc_metric_descs[] = {
 	[SADC_VERSION] = {
@@ -603,6 +607,34 @@ pmDesc sadc_metric_descs[] = {
 		.units = PMI_UNITS(0, 0, 1, 0, 0, PM_COUNT_ONE),
 		.type  = PM_TYPE_U32,
 		.sem   = PM_SEM_INSTANT,
+	},
+	[SADC_ARCHIVE] = {
+		.pmid  = PMID_SADC_ARCHIVE,
+		.indom = PM_INDOM_NULL,
+		.units = PMI_UNITS(0, 0, 0, 0, 0, 0),
+		.type  = PM_TYPE_STRING,
+		.sem   = PM_SEM_DISCRETE,
+	},
+	[SADC_HOSTNAME] = {
+		.pmid  = PMID_SADC_HOSTNAME,
+		.indom = PM_INDOM_NULL,
+		.units = PMI_UNITS(0, 0, 0, 0, 0, 0),
+		.type  = PM_TYPE_STRING,
+		.sem   = PM_SEM_DISCRETE,
+	},
+	[SADC_TIMEZONE] = {
+		.pmid  = PMID_SADC_TIMEZONE,
+		.indom = PM_INDOM_NULL,
+		.units = PMI_UNITS(0, 0, 0, 0, 0, 0),
+		.type  = PM_TYPE_STRING,
+		.sem   = PM_SEM_DISCRETE,
+	},
+	[SADC_ZONEINFO] = {
+		.pmid  = PMID_SADC_ZONEINFO,
+		.indom = PM_INDOM_NULL,
+		.units = PMI_UNITS(0, 0, 0, 0, 0, 0),
+		.type  = PM_TYPE_STRING,
+		.sem   = PM_SEM_DISCRETE,
 	},
 };
 pmID sadc_metric_pmids[SADC_METRIC_COUNT];
