@@ -6503,8 +6503,9 @@ pcp_sadc_volume_rotate(const char *vol_path)
 	pid_t pid = fork();
 
 	if (pid == 0) {
-		execlp("zstd", "zstd", "--rm", vol_path, (char *)NULL);
-		_exit(1);	/* zstd not in PATH; sa2 compresses nightly */
+		alarm(0);
+		execlp("zstd", "zstd", "-q", "--rm", vol_path, (char *)NULL);
+		_exit(1);
 	}
 	/* parent continues; child reaped by existing SIGCHLD/SIGALRM handling */
 }
