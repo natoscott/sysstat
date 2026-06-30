@@ -1274,6 +1274,7 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 				pcp_close_sadc_archive();
 				pmstrncpy(pcp_archive, sizeof(pcp_archive), ofile);
 				pcp_open_sadc_archive(pcp_archive, &file_hdr);
+				pcp_sadc_set_volume_size(local_cfg.volume_size);
 				pcp_register_import_program(pcp_archive, &local_cfg);
 				pcp_write_file_header_metrics(&file_hdr);
 				pcp_write_import_metrics(pcp_archive, &file_hdr, interval, &local_cfg);
@@ -1636,7 +1637,7 @@ int main(int argc, char **argv)
 		 * PCP archive base path: use the sa output file directly.
 		 * pmiStart appends .0/.meta/.index so the PCP archive files
 		 * coexist with the native sa file without conflict.
-		 * For stdout-only runs default to /var/log/sa/sa{DD}.
+		 * For stdout-only runs default to SA_DIR/sa{DD|YYYYMMDD}.
 		 */
 		if (!pcp_archive[0]) {
 			if (ofile[0]) {
@@ -1645,8 +1646,16 @@ int main(int argc, char **argv)
 				time_t now = time(NULL);
 				struct tm lt;
 				localtime_r(&now, &lt);
-				pmsprintf(pcp_archive, sizeof(pcp_archive),
-					  "/var/log/sa/sa%02d", lt.tm_mday);
+				if (USE_SA_YYYYMMDD(flags))
+					pmsprintf(pcp_archive, sizeof(pcp_archive),
+						  "%s/sa%04d%02d%02d", SA_DIR,
+						  lt.tm_year + 1900,
+						  lt.tm_mon + 1,
+						  lt.tm_mday);
+				else
+					pmsprintf(pcp_archive, sizeof(pcp_archive),
+						  "%s/sa%02d", SA_DIR,
+						  lt.tm_mday);
 			}
 		}
 
@@ -1915,6 +1924,8 @@ pcp_init_done:	;
 						      record_hdr.ust_time,
 						      pcp_nsec,
 						      &local_cfg);
+			pcp_close_sadc_archive();
+			pcp_local_free(&local_cfg);
 		}
 #endif
 

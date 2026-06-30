@@ -35,6 +35,7 @@
 #endif
 
 #ifdef HAVE_PCP
+#include <sys/wait.h>
 #include <pcp/pmapi.h>
 #include <pcp/import.h>
 #endif
@@ -6495,25 +6496,36 @@ void pcp_write_uptime(unsigned long long uptime_cs)
 #endif
 }
 
+static pid_t compress_child;
+
 /*
  ***************************************************************************
  * Callback invoked by pmiSetVolumeSize() when a data volume is completed.
- * Runs pmlogcompress on the closed volume in a background child process so
- * collection is not blocked.  Falls back to the configured ZIP tool when
- * pmlogcompress is not in PATH (e.g. only pcp-libs is installed).
+ * Compresses the closed volume with zstd in a child process.  The child
+ * PID is saved so pcp_close_sadc_archive() can wait for it before the
+ * process exits — otherwise systemd cgroup cleanup kills the child.
  ***************************************************************************
  */
 static void
 pcp_sadc_volume_rotate(const char *vol_path)
 {
-	pid_t pid = fork();
+	pid_t pid;
+
+	/* Reap any previous compression child before forking a new one */
+	if (compress_child > 0) {
+		waitpid(compress_child, NULL, 0);
+		compress_child = 0;
+	}
+
+	pid = fork();
 
 	if (pid == 0) {
 		alarm(0);
 		execlp("zstd", "zstd", "-q", "--rm", vol_path, (char *)NULL);
 		_exit(1);
 	}
-	/* parent continues; child reaped by existing SIGCHLD/SIGALRM handling */
+	if (pid > 0)
+		compress_child = pid;
 }
 
 /*
@@ -6542,6 +6554,10 @@ void pcp_sadc_set_volume_size(size_t volume_size)
  */
 void pcp_close_sadc_archive(void)
 {
+	if (compress_child > 0) {
+		waitpid(compress_child, NULL, 0);
+		compress_child = 0;
+	}
 	pmiEnd();
 }
 #endif /* HAVE_PMI_APPEND */
