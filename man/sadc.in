@@ -188,7 +188,7 @@ metrics and can be replayed using the
 .B \-a
 option of the respective sysstat tool.
 The
-.B PCP_CONF
+.B SYSSTAT_PCPCONF
 environment variable overrides the configuration file path.
 .TP
 .BI "\-S { " "keyword" "[,...] | ALL | XALL }"
@@ -217,6 +217,19 @@ and later. The
 .B XALL
 keyword is equivalent to specifying all the keywords above (including
 keyword extensions) and therefore all possible activities are collected.
+.IP
+In addition to the built-in keywords, any metric group name defined in
+.BR sysstat.pcpconf (5)
+may be used (e.g.\&
+.BR "\-S PROC" ", " "\-S TAPE" ")."
+Group names are case-insensitive.
+The
+.BR ALL " and " XALL
+keywords also enable all configured metric groups.
+A group can be disabled by prefixing its name with
+.B \-
+(e.g.\&
+.BR "\-S XALL,\-NUMA" ")."
 .IP
 Important note: The activities (including optional ones) saved in an existing
 data file prevail over those selected with option

@@ -35,13 +35,9 @@ int pcp_local_get_ctx(void) { return local_ctx; }
 
 /*
  ***************************************************************************
- * Config file parsing
+ * Config file parsing and metric group management
  ***************************************************************************
  */
-
-#define SECTION_NONE     0
-#define SECTION_SETTINGS 1
-#define SECTION_METRICS  2
 
 /* Growing string list used during config parsing and PMNS traversal */
 struct strlist {
@@ -78,10 +74,6 @@ static void traverse_cb(const char *name)
 	strlist_add(&g_traverse, name);
 }
 
-/*
- * Strip leading and trailing whitespace in-place, return pointer to first
- * non-space character (may point inside the original buffer).
- */
 static char *strip(char *s)
 {
 	char *end;
@@ -96,27 +88,67 @@ static char *strip(char *s)
 	return s;
 }
 
+static size_t parse_size(const char *val)
+{
+	char *end;
+	size_t v = (size_t)strtoull(val, &end, 10);
+
+	switch (tolower((unsigned char)*end)) {
+	case 'g': v *= 1024; /* fall through */
+	case 'm': v *= 1024; /* fall through */
+	case 'k': v *= 1024; break;
+	}
+	return v;
+}
+
+static void strtoupper(char *s)
+{
+	for (; *s; s++)
+		*s = toupper((unsigned char)*s);
+}
+
+static struct pcp_metric_group *
+group_add(struct pcp_local_config *cfg, const char *name)
+{
+	struct pcp_metric_group *g;
+
+	cfg->groups = realloc(cfg->groups,
+			      (cfg->num_groups + 1) * sizeof(*cfg->groups));
+	g = &cfg->groups[cfg->num_groups++];
+	memset(g, 0, sizeof(*g));
+	pmstrncpy(g->name, sizeof(g->name), name);
+	strtoupper(g->name);
+	return g;
+}
+
+static void group_add_metric(struct pcp_metric_group *g, const char *name)
+{
+	g->raw_metrics = realloc(g->raw_metrics,
+				 (g->num_raw + 1) * sizeof(char *));
+	g->raw_metrics[g->num_raw++] = strdup(name);
+}
+
 /*
  ***************************************************************************
- * Parse sysstat.pcpconf.
+ * Phase 1: parse pcpconf group sections (no PCP context needed).
  *
- * IN:
- * @conffile	Path to configuration file.
- * @raw_metrics	Output: list of raw metric names from [metrics] section.
- * @volume_size	Output: data volume rotation size (bytes, 0 = disabled).
+ * Key-value pairs before the first [heading] are global settings.
+ * Each [HEADING] starts a named metric group (uppercased, disabled
+ * by default — enabled via -S like built-in activity groups).
+ * Lines within a group are metric names.
  *
  * RETURNS:
- * 0 on success, -1 on error (file not found is treated as empty config).
+ * 0 on success, -1 if file not found.
  ***************************************************************************
  */
-static int
-parse_config(const char *conffile, struct strlist *raw_metrics, size_t *volume_size)
+int
+pcp_local_load_groups(struct pcp_local_config *cfg, const char *conffile)
 {
 	FILE *fp;
 	char line[1024];
-	int section = SECTION_NONE;
+	struct pcp_metric_group *cur_group = NULL;
 
-	*volume_size = 0;
+	memset(cfg, 0, sizeof(*cfg));
 
 	if ((fp = fopen(conffile, "r")) == NULL)
 		return -1;
@@ -132,38 +164,113 @@ parse_config(const char *conffile, struct strlist *raw_metrics, size_t *volume_s
 			if (!end)
 				continue;
 			*end = '\0';
-			p++;
-			if (!strcmp(p, "settings"))
-				section = SECTION_SETTINGS;
-			else if (!strcmp(p, "metrics"))
-				section = SECTION_METRICS;
-			else
-				section = SECTION_NONE;
+			cur_group = group_add(cfg, p + 1);
 			continue;
 		}
 
-		switch (section) {
-		case SECTION_SETTINGS: {
+		if (cur_group == NULL) {
 			char *eq = strchr(p, '=');
+			char *key, *val;
+
 			if (!eq)
-				break;
+				continue;
 			*eq = '\0';
-			char *key = strip(p);
-			char *val = strip(eq + 1);
+			key = strip(p);
+			val = strip(eq + 1);
+
 			if (!strcmp(key, "volume_size"))
-				*volume_size = (size_t)strtoull(val, NULL, 10);
-			break;
-		}
-		case SECTION_METRICS:
-			strlist_add(raw_metrics, p);
-			break;
-		default:
-			break;
+				cfg->volume_size = parse_size(val);
+		} else {
+			group_add_metric(cur_group, p);
 		}
 	}
 
 	fclose(fp);
 	return 0;
+}
+
+/*
+ ***************************************************************************
+ * -S integration: enable/disable metric groups by name.
+ * Names are compared case-insensitively (uppercased internally).
+ * Groups that collide with built-in -S keywords are unreachable
+ * here because the built-in dispatch runs first; such groups just
+ * stay disabled.
+ *
+ * RETURNS:
+ * 0 if group found, -1 if not.
+ ***************************************************************************
+ */
+int
+pcp_local_group_enable(const char *name, struct pcp_local_config *cfg)
+{
+	char upper[32];
+	unsigned int i;
+
+	pmstrncpy(upper, sizeof(upper), name);
+	strtoupper(upper);
+
+	for (i = 0; i < cfg->num_groups; i++) {
+		if (!strcmp(upper, cfg->groups[i].name)) {
+			cfg->groups[i].enabled = 1;
+			return 0;
+		}
+	}
+	return -1;
+}
+
+int
+pcp_local_group_disable(const char *name, struct pcp_local_config *cfg)
+{
+	char upper[32];
+	unsigned int i;
+
+	pmstrncpy(upper, sizeof(upper), name);
+	strtoupper(upper);
+
+	for (i = 0; i < cfg->num_groups; i++) {
+		if (!strcmp(upper, cfg->groups[i].name)) {
+			cfg->groups[i].enabled = 0;
+			return 0;
+		}
+	}
+	return -1;
+}
+
+int
+pcp_local_group_enable_all(struct pcp_local_config *cfg)
+{
+	unsigned int i;
+
+	for (i = 0; i < cfg->num_groups; i++)
+		cfg->groups[i].enabled = 1;
+	return cfg->num_groups;
+}
+
+void
+pcp_local_group_disable_all(struct pcp_local_config *cfg)
+{
+	unsigned int i;
+
+	for (i = 0; i < cfg->num_groups; i++)
+		cfg->groups[i].enabled = 0;
+}
+
+void
+pcp_local_append_group_names(const struct pcp_local_config *cfg,
+			     char *buf, size_t len)
+{
+	unsigned int i;
+	int any = (buf[0] != '\0');
+
+	for (i = 0; i < cfg->num_groups; i++) {
+		if (!cfg->groups[i].enabled)
+			continue;
+		if (any)
+			pmstrncat(buf, len, ",");
+		pmstrncat(buf, len, cfg->groups[i].name);
+		any = 1;
+	}
 }
 
 /*
@@ -352,109 +459,73 @@ local_metric_add(struct pcp_local_config *cfg, const char *name)
 
 /*
  ***************************************************************************
- * Initialise local-context metric collection.
+ * Phase 2: open PM_CONTEXT_LOCAL, resolve metrics for enabled groups.
  *
- * Parses conffile, loads PMDAs via pmSpecLocalPMDA, opens a
- * PM_CONTEXT_LOCAL context, looks up metric names and descs.
- * Must be called BEFORE pmiStart() so pmSpecLocalPMDA takes effect.
- *
- * IN:
- * @cfg		Config structure to populate.
- * @conffile	Path to sysstat.pcpconf.
- *
- * RETURNS:
- * 0 on success, -1 if config absent or no usable metrics found.
+ * Must be called AFTER pcp_local_load_groups() and after -S option
+ * parsing so that group enabled flags are final.
  ***************************************************************************
  */
 int
-pcp_local_init(struct pcp_local_config *cfg, const char *conffile)
+pcp_local_init(struct pcp_local_config *cfg)
 {
-	struct strlist raw_metrics = {0};
-	size_t volume_size;
-	size_t i;
+	unsigned int g, m;
+	size_t j;
 	int sts;
-
-	memset(cfg, 0, sizeof(*cfg));
-
-	if (parse_config(conffile, &raw_metrics, &volume_size) < 0) {
-		strlist_free(&raw_metrics);
-		return -1;
-	}
-
-	cfg->volume_size = volume_size;
 
 	/*
 	 * Point libpcp at the local DSO PMDA configuration and namespace so
 	 * that PM_CONTEXT_LOCAL loads the correct set of DSO PMDAs and resolves
 	 * metric names against the matching local PMNS.
-	 * Use pmGetConfig() for platform-portable paths rather than hardcoding.
 	 */
 	char path[MAXPATHLEN];
 	pmsprintf(path, sizeof(path), "%s/local.conf", pmGetConfig("PCP_SYSCONF_DIR"));
 	setenv("PCP_PMCDCONF_FILE", path, 0);
-	/* Prefer local.root (new name); fall back to root.local on older installs */
 	pmsprintf(path, sizeof(path), "%s/pmns/local.root", pmGetConfig("PCP_VAR_DIR"));
-	if (access(path, F_OK) != 0)
-		pmsprintf(path, sizeof(path), "%s/pmns/root.local",
-			  pmGetConfig("PCP_VAR_DIR"));
 	setenv("PMNS_DEFAULT", path, 0);
 
-	/* Open PM_CONTEXT_LOCAL — loads proc PMDA (and any extras above) */
 	sts = pmNewContext(PM_CONTEXT_LOCAL, NULL);
 	if (sts < 0) {
 		fprintf(stderr, _("PCP local: pmNewContext failed: %s\n"),
 			pmErrStr(sts));
-		strlist_free(&raw_metrics);
 		return -1;
 	}
 	local_ctx = sts;
 
-	/*
-	 * Expand raw metric names: non-leaf names are expanded to all leaves
-	 * beneath them via pmTraversePMNS.
-	 */
-	struct strlist leaf_metrics = {0};
+	/* Expand and resolve metrics from enabled groups only */
+	for (g = 0; g < cfg->num_groups; g++) {
+		struct pcp_metric_group *grp = &cfg->groups[g];
 
-	for (i = 0; i < raw_metrics.count; i++) {
-		pmID pmid;
-		const char *np = raw_metrics.items[i];
+		if (!grp->enabled)
+			continue;
 
-		sts = pmLookupName(1, &np, &pmid);
-		if (sts >= 0) {
-			/* Leaf metric */
-			strlist_add(&leaf_metrics, raw_metrics.items[i]);
-		} else if (sts == PM_ERR_NONLEAF) {
-			/* Namespace node — traverse to find all leaves */
-			memset(&g_traverse, 0, sizeof(g_traverse));
-			pmTraversePMNS(raw_metrics.items[i], traverse_cb);
-			size_t j;
+		for (m = 0; m < grp->num_raw; m++) {
+			pmID pmid;
+			const char *np = grp->raw_metrics[m];
 
-			for (j = 0; j < g_traverse.count; j++)
-				strlist_add(&leaf_metrics, g_traverse.items[j]);
-			strlist_free(&g_traverse);
-		} else {
-			fprintf(stderr,
-				_("PCP local: skipping '%s': %s\n"),
-				raw_metrics.items[i], pmErrStr(sts));
+			sts = pmLookupName(1, &np, &pmid);
+			if (sts >= 0) {
+				local_metric_add(cfg, grp->raw_metrics[m]);
+			} else if (sts == PM_ERR_NONLEAF) {
+				memset(&g_traverse, 0, sizeof(g_traverse));
+				pmTraversePMNS(grp->raw_metrics[m], traverse_cb);
+				for (j = 0; j < g_traverse.count; j++)
+					local_metric_add(cfg, g_traverse.items[j]);
+				strlist_free(&g_traverse);
+			} else {
+				fprintf(stderr,
+					_("PCP local: skipping '%s': %s\n"),
+					grp->raw_metrics[m], pmErrStr(sts));
+			}
 		}
 	}
-	strlist_free(&raw_metrics);
 
-	/* Add each leaf metric to the config */
-	for (i = 0; i < leaf_metrics.count; i++)
-		local_metric_add(cfg, leaf_metrics.items[i]);
-	strlist_free(&leaf_metrics);
-
-	if (!cfg->num_metrics) {
-		fprintf(stderr, _("PCP local: no usable metrics found in %s\n"),
-			conffile);
+	if (!cfg->num_metrics)
 		return -1;
-	}
 
 	/* Build flat PMID array for pmFetch */
 	cfg->pmids = malloc(cfg->num_metrics * sizeof(pmID));
-	for (i = 0; i < cfg->num_metrics; i++)
-		cfg->pmids[i] = cfg->metrics[i].pmid;
+	for (j = 0; j < cfg->num_metrics; j++)
+		cfg->pmids[j] = cfg->metrics[j].pmid;
 
 	return 0;
 }

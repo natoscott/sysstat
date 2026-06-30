@@ -6,6 +6,8 @@
 #ifndef _PCP_STATS_H
 #define _PCP_STATS_H
 
+struct pcp_local_config;
+
 /*
  ***************************************************************************
  * Prototypes for functions used to display system statistics in PCP format
@@ -110,10 +112,13 @@ __print_funct_t pcp_print_psimem_stats
 /* sadc self-description and event functions */
 void pcp_register_sadc_metrics(void);
 void pcp_write_import_metrics(const char *path, const struct file_header *hdr,
-			      long interval_secs);
-void pcp_register_import_program(const char *archive_path);
+			      long interval_secs,
+			      const struct pcp_local_config *local_cfg);
+void pcp_register_import_program(const char *archive_path,
+				 const struct pcp_local_config *local_cfg);
 void pcp_write_sadc_special_record(const char *comment, unsigned int cpu_nr,
-				   unsigned long long timestamp, unsigned int nsec);
+				   unsigned long long timestamp, unsigned int nsec,
+				   const struct pcp_local_config *local_cfg);
 
 /* Shared PCP archive reading helpers (used by sar and sadf) */
 void check_pcpfile_actlist(const char *from_file, struct activity *act[], uint64_t flags);

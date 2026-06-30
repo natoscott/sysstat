@@ -15,7 +15,7 @@ proc.psinfo.utime
 proc.io.rchar
 proc.id.uid_nm
 EOF
-	TZ=GMT PCP_CONF=tests/pcpar-sadc2.pcpconf \
+	TZ=GMT SYSSTAT_PCPCONF=tests/pcpar-sadc2.pcpconf \
 		./sadc --unix_time=1555593619 \
 		-S XALL,-A_PWR_FAN,-A_PWR_IN,-A_PWR_TEMP,-A_PWR_FREQ \
 		-O pcp tests/sa18 1 1 >/dev/null 2>&1 || exit 1

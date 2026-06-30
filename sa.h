@@ -119,6 +119,7 @@ enum {
 #define S_F_PCP_OUTPUT		0x100000000ULL	/* Only used by sadc */
 #define S_F_PCP_ONLY		0x200000000ULL	/* Only used by sadc */
 #define S_F_PCP_INPUT		0x400000000ULL	/* sar -a: read PCP archive explicitly */
+#define S_F_PCP_GROUPS		0x800000000ULL	/* Only used by sadc */
 
 #define WANT_SINCE_BOOT(m)		(((m) & S_F_SINCE_BOOT)   == S_F_SINCE_BOOT)
 #define WANT_SA_ROTAT(m)		(((m) & S_F_SA_ROTAT)     == S_F_SA_ROTAT)
@@ -142,6 +143,7 @@ enum {
 #define DISPLAY_DEBUG_MODE(m)		(((m) & S_F_DEBUG_MODE)   == S_F_DEBUG_MODE)
 #define WRITE_PCP_OUTPUT(m)		(((m) & S_F_PCP_OUTPUT)   == S_F_PCP_OUTPUT)
 #define WRITE_PCP_ONLY(m)		(((m) & S_F_PCP_ONLY)     == S_F_PCP_ONLY)
+#define PCP_GROUPS_ACTIVE(m)		(((m) & S_F_PCP_GROUPS)   == S_F_PCP_GROUPS)
 #define AUTOSCALE_ON(m)			(((m) & S_F_SVG_AUTOSCALE) == S_F_SVG_AUTOSCALE)
 #define DISPLAY_ONE_DAY(m)		(((m) & S_F_SVG_ONE_DAY)  == S_F_SVG_ONE_DAY)
 #define DISPLAY_IDLE(m)			(((m) & S_F_SVG_SHOW_IDLE) == S_F_SVG_SHOW_IDLE)

@@ -14,7 +14,7 @@ if [ "$HAVE_PCP" = "y" ]; then
 	LC_ALL=C TZ=GMT ./sar -u -f tests/sa18 > tests/out.sar-pcp-sadc.tmp 2>/dev/null
 	grep -q "SYSSTAT.TEST\|%user\|%idle" tests/out.sar-pcp-sadc.tmp || exit 1
 	# Also check that sadc.* provenance metrics are in the archive
-	pminfo -a tests/sa18 sadc.version sadc.activities > /dev/null 2>&1 || exit 1
+	pminfo -a tests/sa18 pmimport.version pmimport.args > /dev/null 2>&1 || exit 1
 else
 	echo Skipped; touch tests/SKIPPED
 fi

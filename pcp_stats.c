@@ -5731,7 +5731,8 @@ void pcp_read_stats(pmValueSet *values, struct file_header *header, int curr)
  ***************************************************************************
  */
 static void
-build_sadc_activities_string(char *buf, size_t len)
+build_sadc_activities_string(char *buf, size_t len,
+			     const struct pcp_local_config *local_cfg)
 {
 	int	p, first = TRUE;
 
@@ -5747,10 +5748,12 @@ build_sadc_activities_string(char *buf, size_t len)
 			name += 2;
 
 		if (!first)
-			strncat(buf, ",", len - strlen(buf) - 1);
-		strncat(buf, name, len - strlen(buf) - 1);
+			pmstrncat(buf, len, ",");
+		pmstrncat(buf, len, name);
 		first = FALSE;
 	}
+
+	pcp_local_append_group_names(local_cfg, buf, len);
 }
 
 /*
@@ -5816,7 +5819,8 @@ pcp_register_sadc_metrics(void)
  */
 void
 pcp_write_import_metrics(const char *path, const struct file_header *hdr,
-			 long interval_secs)
+			 long interval_secs,
+			 const struct pcp_local_config *local_cfg)
 {
 	char		abuf[1024];
 	pmAtomValue	atom;
@@ -5832,7 +5836,7 @@ pcp_write_import_metrics(const char *path, const struct file_header *hdr,
 	atom.cp = VERSION;
 	pmiPutAtomValueHandle(ACT_HANDLE(&sadc_metrics, SADC_VERSION, 0), &atom);
 
-	build_sadc_activities_string(abuf, sizeof(abuf));
+	build_sadc_activities_string(abuf, sizeof(abuf), local_cfg);
 	atom.cp = abuf;
 	pmiPutAtomValueHandle(ACT_HANDLE(&sadc_metrics, SADC_ACTIVITIES, 0), &atom);
 
@@ -5865,11 +5869,12 @@ pcp_write_import_metrics(const char *path, const struct file_header *hdr,
  ***************************************************************************
  */
 void
-pcp_register_import_program(const char *archive_path)
+pcp_register_import_program(const char *archive_path,
+			    const struct pcp_local_config *local_cfg)
 {
 	char	abuf[512];
 
-	build_sadc_activities_string(abuf, sizeof(abuf));
+	build_sadc_activities_string(abuf, sizeof(abuf), local_cfg);
 	pmiSetImportProgram("sadc", VERSION, abuf, archive_path);
 }
 
@@ -5894,7 +5899,8 @@ pcp_register_import_program(const char *archive_path)
  */
 void
 pcp_write_sadc_special_record(const char *comment, unsigned int cpu_nr,
-			      unsigned long long timestamp, unsigned int nsec)
+			      unsigned long long timestamp, unsigned int nsec,
+			      const struct pcp_local_config *local_cfg)
 {
 	if (comment[0]) {
 		/* Comment: annotation only, no discontinuity mark */
@@ -5918,7 +5924,7 @@ pcp_write_sadc_special_record(const char *comment, unsigned int cpu_nr,
 		atom.cp = VERSION;
 		pmiPutAtomValueHandle(ACT_HANDLE(&sadc_metrics, SADC_VERSION, 0), &atom);
 
-		build_sadc_activities_string(abuf, sizeof(abuf));
+		build_sadc_activities_string(abuf, sizeof(abuf), local_cfg);
 		atom.cp = abuf;
 		pmiPutAtomValueHandle(ACT_HANDLE(&sadc_metrics, SADC_ACTIVITIES, 0), &atom);
 	}

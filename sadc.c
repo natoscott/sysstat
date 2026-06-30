@@ -241,12 +241,15 @@ void parse_sadc_S_option(char *argv[], int opt)
 				/* Tell sadc to also collect partition statistics */
 				collect_group_activities(G_DISK + G_XDISK, AO_F_DISK_PART);
 			}
+			if (pcp_local_group_enable_all(&local_cfg))
+				flags |= S_F_PCP_GROUPS;
 		}
 		else if (!strcmp(p, K_A_NULL)) {
 			/* Unselect all activities */
 			for (i = 0; i < NR_ACT; i++) {
 				act[i]->options &= ~AO_COLLECTED;
 			}
+			pcp_local_group_disable_all(&local_cfg);
 		}
 		else if (!strncmp(p, "A_", 2)) {
 			/* Select activity by name */
@@ -271,6 +274,13 @@ void parse_sadc_S_option(char *argv[], int opt)
 			if (i == NR_ACT) {
 				usage(argv[0]);
 			}
+		}
+		else if (pcp_local_group_enable(p, &local_cfg) == 0) {
+			flags |= S_F_PCP_GROUPS;
+		}
+		else if (*p == '-' &&
+			 pcp_local_group_disable(p + 1, &local_cfg) == 0) {
+			/* group disabled */
 		}
 		else {
 			usage(argv[0]);
@@ -1264,9 +1274,9 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 				pcp_close_sadc_archive();
 				pmstrncpy(pcp_archive, sizeof(pcp_archive), ofile);
 				pcp_open_sadc_archive(pcp_archive, &file_hdr);
-				pcp_register_import_program(pcp_archive);
+				pcp_register_import_program(pcp_archive, &local_cfg);
 				pcp_write_file_header_metrics(&file_hdr);
-				pcp_write_import_metrics(pcp_archive, &file_hdr, interval);
+				pcp_write_import_metrics(pcp_archive, &file_hdr, interval, &local_cfg);
 				for (p = 0; p < NR_ACT; p++) {
 					if (!IS_COLLECTED(act[p]->options) ||
 					    !act[p]->f_pcp_print)
@@ -1340,6 +1350,7 @@ int main(int argc, char **argv)
 {
 	int opt = 0;
 	char ofile[MAX_FILE_LEN], sa_dir[MAX_FILE_LEN];
+	const char *pcpconf;
 	int stdfd = 0, ofd = -1;
 	int restart_mark;
 	long count = 0;
@@ -1368,6 +1379,12 @@ int main(int argc, char **argv)
 	/* Init National Language Support */
 	init_nls();
 #endif
+
+	/* Parse pcpconf group sections before option parsing */
+	pcpconf = getenv("SYSSTAT_PCPCONF");
+	pcp_local_load_groups(&local_cfg,
+			      pcpconf ? pcpconf
+				      : SYSCONFIG_DIR "/sysstat.pcpconf");
 
 	while (++opt < argc) {
 
@@ -1633,17 +1650,8 @@ int main(int argc, char **argv)
 			}
 		}
 
-		/*
-		 * Initialise local PMDA context before pmiStart.
-		 * Errors here are non-fatal; we just skip local metrics.
-		 * PCP_CONF env var overrides the default config path (for testing).
-		 */
-		{
-			const char *pcpconf = __getenv("PCP_CONF");
-			pcp_local_init(&local_cfg,
-				       pcpconf ? pcpconf
-					       : SYSCONFIG_DIR "/sysstat.pcpconf");
-		}
+		/* Phase 2: open local PMDA context, resolve enabled groups */
+		pcp_local_init(&local_cfg);
 
 		/*
 		 * PMI_APPEND falls back silently to creating a new archive
@@ -1661,7 +1669,7 @@ int main(int argc, char **argv)
 		}
 
 		/* Register with pmdapmimport via /var/run/pmimport */
-		pcp_register_import_program(pcp_archive);
+		pcp_register_import_program(pcp_archive, &local_cfg);
 
 		/* Register local metrics into the now-open PMI write context */
 		pcp_local_register(&local_cfg);
@@ -1688,7 +1696,7 @@ int main(int argc, char **argv)
 			act[get_activity_position(act, A_NET_DEV, EXIT_IF_NOT_FOUND)]->nr_ini,
 			(unsigned long long) time(NULL),
 			system_uptime);
-		pcp_write_import_metrics(pcp_archive, &file_hdr, interval);
+		pcp_write_import_metrics(pcp_archive, &file_hdr, interval, &local_cfg);
 
 		/*
 		 * pcp_print_*_stats() functions access both buf[0] (current)
@@ -1905,7 +1913,8 @@ pcp_init_done:	;
 			pcp_write_sadc_special_record(comment,
 						      file_hdr.sa_cpu_nr,
 						      record_hdr.ust_time,
-						      pcp_nsec);
+						      pcp_nsec,
+						      &local_cfg);
 		}
 #endif
 
