@@ -138,6 +138,49 @@ int get_activity_nr(struct activity *act[], unsigned int option, enum count_mode
  * 		1 to use saYYYYMMDD data files.
  ***************************************************************************
  */
+/*
+ ***************************************************************************
+ * Stat a data file, checking for a native sa file (saXX) or a PCP
+ * archive (saXX.index) with the given base path.
+ *
+ * IN:
+ * @filename	Base path to check (e.g. /var/log/sa/sa01).
+ *
+ * OUT:
+ * @sb		Stat buffer, filled on success.
+ *
+ * RETURNS:
+ * 0 on success (native or PCP archive found), -1 if neither exists.
+ ***************************************************************************
+ */
+int stat_sa_file(char *filename, struct stat *sb)
+{
+#ifdef HAVE_PCP
+	char idx_filename[MAX_FILE_LEN + 8];
+
+	/* PCP archive .index is never compressed, so always present */
+	snprintf(idx_filename, sizeof(idx_filename), "%s.index", filename);
+	if (stat(idx_filename, sb) == 0)
+		return 0;
+#endif
+
+	return stat(filename, sb);
+}
+
+/*
+ ***************************************************************************
+ * Look for the most recent of saDD and saYYYYMMDD to decide which one to
+ * use. If neither exists then use saDD by default.
+ *
+ * IN:
+ * @sa_dir	Directory where standard daily data files are saved.
+ * @rectime	Structure containing the current date.
+ *
+ * OUT:
+ * @sa_name	0 to use saDD data files,
+ * 		1 to use saYYYYMMDD data files.
+ ***************************************************************************
+ */
 void guess_sa_name(char *sa_dir, struct tm *rectime, int *sa_name)
 {
 	char filename[MAX_FILE_LEN];
@@ -148,14 +191,14 @@ void guess_sa_name(char *sa_dir, struct tm *rectime, int *sa_name)
 	/* Use saDD by default */
 	*sa_name = 0;
 
-	/* Look for saYYYYMMDD */
+	/* Look for saYYYYMMDD (native or PCP archive) */
 	snprintf(filename, sizeof(filename),
 		 "%s/sa%04d%02d%02d", sa_dir,
 		 rectime->tm_year + 1900,
 		 rectime->tm_mon + 1,
 		 rectime->tm_mday);
 
-	if (stat(filename, &sb) < 0)
+	if (stat_sa_file(filename, &sb) < 0)
 		/* Cannot find or access saYYYYMMDD, so use saDD */
 		return;
 	sa_mtime = sb.st_mtime;
@@ -165,12 +208,12 @@ void guess_sa_name(char *sa_dir, struct tm *rectime, int *sa_name)
 	nsec = sb.st_mtimespec.tv_nsec;
 #endif
 
-	/* Look for saDD */
+	/* Look for saDD (native or PCP archive) */
 	snprintf(filename, sizeof(filename),
 		 "%s/sa%02d", sa_dir,
 		 rectime->tm_mday);
 
-	if (stat(filename, &sb) < 0) {
+	if (stat_sa_file(filename, &sb) < 0) {
 		/* Cannot find or access saDD, so use saYYYYMMDD */
 		*sa_name = 1;
 		return;
