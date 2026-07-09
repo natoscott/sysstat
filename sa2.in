@@ -60,7 +60,7 @@ then
        ENDIR=@bindir@
 fi
 
-[ -f "${DFILE}" ] || exit 0
+[ -f "${DFILE}" ] || [ -f "${DFILE}.index" ] || exit 0
 cd ${ENDIR}
 if [ x${REPORTS} != xfalse ]
 then
