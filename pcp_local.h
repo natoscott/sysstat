@@ -1,6 +1,7 @@
 /*
  * pcp_local.h: Local PMDA metric collection for PCP archive output.
- * (C) 2025 by Sebastien Godard (sysstat <at> orange.fr)
+ * (C) 2026 Red Hat, Inc.
+ * (C) 2025-2026 by Sebastien Godard (sysstat <at> orange.fr)
  */
 
 #ifndef _PCP_LOCAL_H

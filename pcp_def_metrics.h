@@ -9,6 +9,10 @@
 
 #ifdef HAVE_PCP
 
+/* Forward declaration so pcp_def_*_metrics function prototypes compile
+ * cleanly when this header is included before sa.h. */
+struct activity;
+
 /*
  ***************************************************************************
  * Structure with PCP metrics information for each activity

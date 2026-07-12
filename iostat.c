@@ -36,6 +36,7 @@
 
 #include "version.h"
 #include "iostat.h"
+#include "pcp_iostat.h"
 #include "rd_stats.h"
 #include "count.h"
 
@@ -84,21 +85,21 @@ void usage(char *progname)
 {
 	fprintf(stderr, _("Usage: %s [ options ] [ <interval> [ <count> ] ]\n"),
 		progname);
-#ifdef DEBUG
 	fprintf(stderr, _("Options are:\n"
 			  "[ -c ] [ -d ] [ -h ] [ -k | -m | -G ] [ -N ] [ -s ] [ -t ] [ -U ] [ -V ] [ -x ] [ -y ] [ -z ]\n"
-			  "[ { -f | +f } <directory> ] [ -j { ID | LABEL | PATH | UUID | ... } ]\n"
-			  "[ --compact ] [ --dec={ 0 | 1 | 2 } ] [ --human ] [ --pretty ] [ -o JSON ]\n"
-			  "[ [ -H ] -g <group_name> ] [ -p [ <device> [,...] | ALL ] ]\n"
-			  "[ <device> [...] | ALL ] [ --debuginfo ]\n"));
+#ifdef PCP_WRITE
+			  "[ -a <archive> ] "
 #else
-	fprintf(stderr, _("Options are:\n"
-			  "[ -c ] [ -d ] [ -h ] [ -k | -m | -G ] [ -N ] [ -s ] [ -t ] [ -U ] [ -V ] [ -x ] [ -y ] [ -z ]\n"
-			  "[ { -f | +f } <directory> ] [ -j { ID | LABEL | PATH | UUID | ... } ]\n"
+			  "[ { -f | +f } <directory> ] "
+#endif
+			  "[ -j { ID | LABEL | PATH | UUID | ... } ]\n"
 			  "[ --compact ] [ --dec={ 0 | 1 | 2 } ] [ --human ] [ --pretty ] [ -o JSON ]\n"
 			  "[ [ -H ] -g <group_name> ] [ -p [ <device> [,...] | ALL ] ]\n"
-			  "[ <device> [...] | ALL ]\n"));
+			  "[ <device> [...] | ALL ]"
+#ifdef DEBUG
+			  " [ --debuginfo ]"
 #endif
+			  "\n"));
 	exit(1);
 }
 
@@ -2085,8 +2086,15 @@ int main(int argc, char **argv)
 	/* Process args... */
 	while (opt < argc) {
 
+		if (!strcmp(argv[opt], "-a")) {
+			if (!argv[++opt]) {
+				usage(argv[0]);
+			}
+			exit(pcp_iostat_run(argv[opt]));
+		}
+
 		/* -p option used individually. See below for grouped use */
-		if (!strcmp(argv[opt], "-p")) {
+		else if (!strcmp(argv[opt], "-p")) {
 			if (argv[++opt] &&
 			    (strspn(argv[opt], DIGITS) != strlen(argv[opt])) &&
 			    (strncmp(argv[opt], "-", 1))) {

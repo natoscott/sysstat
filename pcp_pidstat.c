@@ -1,6 +1,7 @@
 /*
  * pcp_pidstat.c: Read per-process statistics from a PCP archive.
- * (C) 2025 by Sebastien Godard (sysstat <at> orange.fr)
+ * (C) 2026 Red Hat, Inc.
+ * (C) 2025-2026 by Sebastien Godard (sysstat <at> orange.fr)
  *
  * Implements "pidstat -f <archive>" by opening a PM_CONTEXT_ARCHIVE
  * context, fetching proc.* metrics across consecutive timestamps, and
