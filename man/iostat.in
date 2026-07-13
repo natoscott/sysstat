@@ -7,13 +7,13 @@ statistics for devices and partitions.
 .SH SYNOPSIS
 .ie 'yes'@WITH_DEBUG@' \{
 .B iostat [ \-c ] [ \-d ] [ \-h ] [ \-k | \-m | \-G ] [ \-N ] [ \-s ] [ \-t ] [ \-U ] [ \-V ] [ \-x ] [ \-y ] [ \-z ]
-.BI "[ \-\-compact ] [ \-\-dec={ 0 | 1 | 2 } ] [ { \-f | +f } " "directory" " ] [ \-j { ID | LABEL | PATH | UUID | ... } ] "
+.BI "[ \-\-compact ] [ \-\-dec={ 0 | 1 | 2 } ] [ \-a " "archive" " | { \-f | +f } " "directory" " ] [ \-j { ID | LABEL | PATH | UUID | ... } ] "
 .BI "[ \-o JSON ] [ [ \-H ] \-g " "group_name " "] [ \-\-human ] [ \-\-pretty ] [ \-p [ " "device" "[,...] | ALL ] ] ["
 .IB "device " "[...] | ALL ] [ \-\-debuginfo ] [ " "interval " "[ " "count " "] ] "
 .\}
 .el \{
 .B iostat [ \-c ] [ \-d ] [ \-h ] [ \-k | \-m | \-G ] [ \-N ] [ \-s ] [ \-t ] [ \-U ] [ \-V ] [ \-x ] [ \-y ] [ \-z ]
-.BI "[ \-\-compact ] [ \-\-dec={ 0 | 1 | 2 } ] [ { \-f | +f } " "directory" " ] [ \-j { ID | LABEL | PATH | UUID | ... } ] "
+.BI "[ \-\-compact ] [ \-\-dec={ 0 | 1 | 2 } ] [ \-a " "archive" " | { \-f | +f } " "directory" " ] [ \-j { ID | LABEL | PATH | UUID | ... } ] "
 .BI "[ \-o JSON ] [ [ \-H ] \-g " "group_name " "] [ \-\-human ] [ \-\-pretty ] [ \-p [ " "device" "[,...] | ALL ] ] ["
 .IB "device " "[...] | ALL ] [ " "interval " "[ " "count " "] ]"
 .\}
@@ -231,6 +231,8 @@ option, instead of sampling the live system.
 Extended statistics
 .RB ( \-x )
 are enabled by default in archive mode.
+This option is mutually exclusive with
+.BR \-f " and " +f .
 Requires PCP support
 .RB ( HAVE_PCP ).
 .TP

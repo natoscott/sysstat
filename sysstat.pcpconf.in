@@ -133,7 +133,6 @@ proc.namespaces.envid
 # hinv.map.mdname     — md-raid device name mapping
 
 # Tape drive statistics (-a option for tapestat)
-# tape.dev.* is in the linux PMDA, loaded automatically via PM_CONTEXT_LOCAL
 tape.dev.read_cnt
 tape.dev.read_byte_cnt
 tape.dev.read_ns

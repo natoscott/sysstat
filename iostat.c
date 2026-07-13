@@ -2087,7 +2087,7 @@ int main(int argc, char **argv)
 	while (opt < argc) {
 
 		if (!strcmp(argv[opt], "-a")) {
-			if (!argv[++opt]) {
+			if (!argv[++opt] || alt_dir[0]) {
 				usage(argv[0]);
 			}
 			exit(pcp_iostat_run(argv[opt]));
