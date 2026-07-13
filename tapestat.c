@@ -46,6 +46,7 @@
 
 #include "version.h"
 #include "tapestat.h"
+#include "pcp_tapestat.h"
 #include "rd_stats.h"
 #include "count.h"
 
@@ -102,6 +103,9 @@ void usage(char *progname)
 	fprintf(stderr, _("Usage: %s [ options ] [ <interval> [ <count> ] ]\n"),
 		progname);
 	fprintf(stderr, _("Options are:\n"
+#ifdef PCP_WRITE
+			  "[ -a <archive> ] "
+#endif
 			  "[ --human ] [ -k | -m | -G ] [ -o JSON ] [ -t ] [ -U ] [ -V ]\n"
 			  "[ -y ] [ -z ]\n"));
 	exit(1);
@@ -760,7 +764,14 @@ int main(int argc, char **argv)
 	/* Process args... */
 	while (opt < argc) {
 
-		if (!strcmp(argv[opt], "--human")) {
+		if (!strcmp(argv[opt], "-a")) {
+			if (!argv[++opt]) {
+				usage(argv[0]);
+			}
+			exit(pcp_tapestat_run(argv[opt]));
+		}
+
+		else if (!strcmp(argv[opt], "--human")) {
 			flags |= T_D_UNIT;
 			opt++;
 		}

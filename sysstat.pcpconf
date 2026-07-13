@@ -105,3 +105,15 @@ proc.psinfo.psargs
 proc.psinfo.wchan_s
 proc.id.uid
 proc.id.uid_nm
+
+# Tape drive statistics (-a option for tapestat)
+# tape.dev.* is in the linux PMDA, loaded automatically via PM_CONTEXT_LOCAL
+tape.dev.read_cnt
+tape.dev.read_byte_cnt
+tape.dev.read_ns
+tape.dev.write_cnt
+tape.dev.write_byte_cnt
+tape.dev.write_ns
+tape.dev.other_cnt
+tape.dev.resid_cnt
+tape.dev.io_ns

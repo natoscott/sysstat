@@ -365,9 +365,12 @@ pcp_iostat.o: pcp_iostat.c iostat.h common.h pcp_def_metrics.h pcp_iostat.h syst
 iostat: LFLAGS += $(LFPCP)
 iostat: iostat.o pcp_iostat.o pcp_def_metrics.o librdstats_light.a libsyscom.a
 
-tapestat.o: tapestat.c tapestat.h version.h common.h count.h rd_stats.h systest.h
+tapestat.o: tapestat.c tapestat.h version.h common.h count.h rd_stats.h systest.h pcp_tapestat.h
 
-tapestat: tapestat.o librdstats_light.a libsyscom.a
+pcp_tapestat.o: pcp_tapestat.c tapestat.h common.h pcp_tapestat.h systest.h
+
+tapestat: LFLAGS += $(LFPCP)
+tapestat: tapestat.o pcp_tapestat.o librdstats_light.a libsyscom.a
 
 pidstat.o: pidstat.c pidstat.h version.h common.h rd_stats.h count.h systest.h pcp_pidstat.h
 
@@ -383,9 +386,12 @@ pcp_mpstat.o: pcp_mpstat.c mpstat.h rd_stats.h common.h pcp_def_metrics.h pcp_mp
 mpstat: LFLAGS += $(LFPCP)
 mpstat: mpstat.o pcp_mpstat.o pcp_def_metrics.o librdstats_light.a libsyscom.a
 
-cifsiostat.o: cifsiostat.c cifsiostat.h count.h rd_stats.h version.h common.h systest.h
+cifsiostat.o: cifsiostat.c cifsiostat.h count.h rd_stats.h version.h common.h systest.h pcp_cifsiostat.h
 
-cifsiostat: cifsiostat.o librdstats_light.a libsyscom.a
+pcp_cifsiostat.o: pcp_cifsiostat.c cifsiostat.h common.h pcp_cifsiostat.h systest.h
+
+cifsiostat: LFLAGS += $(LFPCP)
+cifsiostat: cifsiostat.o pcp_cifsiostat.o librdstats_light.a libsyscom.a
 
 # inisar: Old sar version
 
