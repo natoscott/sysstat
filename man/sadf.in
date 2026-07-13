@@ -162,8 +162,7 @@ format. Timestamps can be controlled by options
 .TP
 .B \-l
 Export the contents of the data file to a PCP (Performance Co-Pilot) archive.
-The archive is written using Y2038-safe nanosecond-resolution timestamps
-.RB "(" "pmiHighResWrite" ")."
+The archive is written using Y2038-safe nanosecond-resolution timestamps.
 The name of the archive can be specified using the keyword
 .BR "pcparchive= " "with option " "\-O" "."
 If no name is given the archive shares the base path of the input data file,
