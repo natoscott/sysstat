@@ -83,9 +83,9 @@ void usage(char *progname)
 			  "[ -a <archive> ] "
 #endif
 			  "[ --dec={ 0 | 1 | 2 } ] [ --human ] [ --pretty ] [ -o JSON ]\n"
-			  "[ -h ] [ -k | -m | -G ] [ -t ] [ -U ] [ -V ] [ -y ]\n"
+			  "[ -h ] [ -k | -m | -G ] [ -t ] [ -U ] [ -V ] [ -y ]"
 #ifdef DEBUG
-			  "[ --debuginfo ]"
+			  " [ --debuginfo ]"
 #endif
 			  "\n"));
 	exit(1);
