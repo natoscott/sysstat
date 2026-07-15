@@ -139,6 +139,30 @@ manual page), you can select some additional data which are going to be saved in
 daily data files.
 These options are used only when a new data file is created. They will be
 ignored with an already existing one.
+.IP
+To enable PCP (Performance Co-Pilot) archive output, add
+.B "\-O sa+pcp"
+to write both native and PCP archives simultaneously, or
+.B "\-O pcp"
+to write PCP archives only.
+For best results with PCP, also use
+.B \-D
+(long date-stamped filenames) and
+.B "\-S XALL"
+(all optional activities).
+For example:
+.IR "SADC_OPTIONS=""\-S XALL \-D \-O sa+pcp""" .
+When PCP output is active, metrics from any installed PCP DSO PMDA are
+also collected and archived alongside the standard system-wide metrics,
+including per-process statistics, CIFS filesystem statistics, and tape
+drive statistics, as configured in
+.IR sysstat.pcpconf (5).
+These archived metrics can be replayed with
+.BR "pidstat \-a" ", " "cifsiostat \-a" ", " "tapestat \-a"
+and the other sysstat tools' new
+.B \-a
+option.
+Requires sysstat built with PCP support (HAVE_PMI_APPEND).
 .TP
 .B UMASK
 .RB "The " "sa1" " and " "sa2"
@@ -161,40 +185,6 @@ job runs at 23:53) set this variable to
 .TP
 .B ZIP
 Program used to compress data and report files.
-.TP
-.B PCP_SA_OPTIONS
-Options passed to
-.BR "sadc" "(8)"
-to enable PCP (Performance Co-Pilot) archive output.
-Set to
-.B "\-O sa+pcp"
-to write both native and PCP archives simultaneously, or
-.B "\-O pcp"
-to write PCP archives only.
-When PCP output is active, metrics from any installed PCP DSO PMDA are
-also collected and archived alongside the standard system-wide metrics,
-including per-process statistics, CIFS filesystem statistics, and tape
-drive statistics, as configured in
-.IR sysstat.pcpconf (5).
-These archived metrics can be replayed with
-.BR "pidstat \-a" ", " "cifsiostat \-a" ", " "tapestat \-a"
-and the other sysstat tools' new
-.B \-a
-option.
-Requires sysstat built with PCP support (HAVE_PMI_APPEND).
-The default is empty (native format only).
-.TP
-.B PCP_COMPRESSAFTER
-Number of days after which completed PCP archive data volumes are
-compressed with
-.BR pmlogcompress (1).
-Defaults to 1 (compress after one day) because per-process metric
-archives grow much faster than native sa files.
-.TP
-.B PCP_HISTORY
-Number of days PCP archive directories are kept before deletion.
-Defaults to the value of
-.BR HISTORY .
 
 .SH FILE
 .I @SYSCONFIG_DIR@/sysstat

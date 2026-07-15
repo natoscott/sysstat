@@ -10,25 +10,11 @@ COMPRESSAFTER=@COMPRESSAFTER@
 
 # Parameters for the system activity data collector (see sadc manual page)
 # which are used for the generation of log files.
+# To enable PCP archive output, add -O sa+pcp (both formats) or -O pcp
+# (PCP only).  For best results with PCP, also use -D (long filenames)
+# and -S XALL (all optional activities).  For example:
+#   SADC_OPTIONS="-S XALL -D -O sa+pcp"
 SADC_OPTIONS="@COLLECT_ALL@ @SADC_OPT@"
-
-# Enable PCP (Performance Co-Pilot) archive output in addition to, or instead
-# of, the native sysstat format.  Requires sysstat built with PCP support.
-# Archives are written to @SA_DIR@/pcpDD/ alongside the native saDD files.
-#
-# Examples:
-#   PCP_SA_OPTIONS="-O sa+pcp"     # write both native and PCP archives
-#   PCP_SA_OPTIONS="-O pcp"  # write only PCP archives (no native saDD)
-#
-# Leave empty (default) for native format only.
-PCP_SA_OPTIONS=""
-
-# Compress PCP archives older than this many days (default: 1 day, much sooner
-# than native archives because proc metric volumes grow quickly).
-#PCP_COMPRESSAFTER=1
-
-# Keep PCP archive directories for this many days (default: same as HISTORY).
-#PCP_HISTORY=@HISTORY@
 
 # Directory where sa and sar files are saved. The directory must exist.
 SA_DIR=@SA_DIR@

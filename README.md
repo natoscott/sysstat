@@ -110,10 +110,10 @@ When built with PCP write support (`HAVE_PMI_APPEND`, requires PCP >= 7.2.0),
 
 ```sh
 # In /etc/sysconfig/sysstat — write both native and PCP archives:
-PCP_SA_OPTIONS="-O sa+pcp"
+SADC_OPTIONS="-S XALL -D -O sa+pcp"
 
 # Or PCP archives only:
-PCP_SA_OPTIONS="-O pcp"
+SADC_OPTIONS="-S XALL -D -O pcp"
 ```
 
 PCP archives share the sa output base path (e.g. `/var/log/sa/sa18.meta`,

@@ -4,8 +4,8 @@
 # named groups that can be selectively enabled via sadc -S (e.g. -S PROC).
 # By default, groups are disabled; -S ALL or -S XALL enables all groups.
 #
-# When sadc is configured to write PCP archives (PCP_SA_OPTIONS="-O pcp"
-# or "-O sa+pcp" in /etc/sysconfig/sysstat), enabled groups are collected
+# When sadc is configured to write PCP archives (-O pcp or -O sa+pcp in
+# SADC_OPTIONS, see /etc/sysconfig/sysstat), enabled groups are collected
 # from a local PMDA context and stored in the same PCP archive.  This can
 # be used to record mpstat, iostat, pidstat, cifsstat and other metrics.
 #

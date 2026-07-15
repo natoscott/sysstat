@@ -797,15 +797,16 @@ concerned several processors.
 ---
 5.1.<a name="5_1"></a> How do I enable PCP archive output alongside (or instead of) native sa files?
 
-A: Set `PCP_SA_OPTIONS` in `/etc/sysconfig/sysstat` (or your platform's equivalent sysstat
-configuration file):
+A: Add the `-O` option to `SADC_OPTIONS` in `/etc/sysconfig/sysstat` (or your platform's
+equivalent sysstat configuration file).  For best results, also use `-D` (long date-stamped
+filenames) and `-S XALL` (all optional activities):
 
 ```
 # Write both native sa files and PCP archives:
-PCP_SA_OPTIONS="-O sa+pcp"
+SADC_OPTIONS="-S XALL -D -O sa+pcp"
 
 # Write PCP archives only (no native sa files):
-PCP_SA_OPTIONS="-O pcp"
+SADC_OPTIONS="-S XALL -D -O pcp"
 ```
 
 PCP archives are written to the same directory as native sa files (`/var/log/sa` by default),
