@@ -78,6 +78,13 @@ find "${SA_DIR}" -type f -mtime +${COMPRESSAFTER} \
 	| xargs -r "${ZIP}" > /dev/null
 
 # PCP archive management (flat-file layout: saDD.0 .meta .index alongside saDD).
+# CURRENTFILE is yesterday (for the sar report); the active archive is today's.
+if [ "${LONG_NAME}" = "y" ]; then
+	TODAYFILE=sa`date +%Y%m%d`
+else
+	TODAYFILE=sa`date +%d`
+fi
+
 PCP_VOLUME_REGEX='/sa[0-9]{2,8}\.[0-9]+$'
 PCP_ARCHIVE_REGEX='/sa[0-9]{2,8}\.(meta|index|[0-9]+)(\.(Z|gz|bz2|xz|lz|lzo|zst))?$'
 
@@ -92,12 +99,12 @@ find "${SA_DIR}" -type f -mtime +${HISTORY} \
 # when only pcp-libs is present; fall back to compressing volumes with ZIP.
 if command -v pmlogcompress >/dev/null 2>&1; then
 	find "${SA_DIR}" -type f -name "sa[0-9]*.meta" \
-		! -name "${CURRENTFILE}.*" \
+		! -name "${TODAYFILE}.*" \
 		| while read meta_file; do
 			pmlogcompress "${meta_file%.meta}" > /dev/null 2>&1
 		done
 else
-	find "${SA_DIR}" -type f ! -name "${CURRENTFILE}.*" \
+	find "${SA_DIR}" -type f ! -name "${TODAYFILE}.*" \
 		! -name "*.gz" ! -name "*.xz" ! -name "*.zst" \
 		! -name "*.bz2" ! -name "*.Z" ! -name "*.lz" ! -name "*.lzo" \
 		| grep -E "${PCP_VOLUME_REGEX}" \
