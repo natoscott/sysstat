@@ -5931,7 +5931,6 @@ pcp_write_sadc_special_record(const char *comment, unsigned int cpu_nr,
 	}
 
 	pmiWrite(timestamp, nsec);
-	pmiEnd();
 }
 
 /*
