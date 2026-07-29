@@ -700,7 +700,6 @@ DFSENSORS
 LFSENSORS
 HAVE_SENSORS
 PCP_IMPL
-HAVE_PMIEXTRAUNITS
 HAVE_PMI_APPEND
 DFPCP
 LFPCP_WRITE
@@ -4810,14 +4809,15 @@ fi
 
 
 # Check for PMI_APPEND flag introduced in PCP 7.2.0.
-# Direct PCP archive output from sadc (-O pcp / -O pcp-only) requires this
+# Direct PCP archive output from sadc (-O pcp / -O sa+pcp) requires this
 # flag so that each short-lived invocation appends to the existing daily
-# archive rather than creating a new one.  The feature is not compiled in
-# at all when building against older PCP versions.
+# archive rather than creating a new one.  The same PCP release added
+# pmiExtraUnits() for physical unit dimensions (temperature, voltage),
+# so a single HAVE_PMI_APPEND macro gates all PCP 7.2.0 write features.
 HAVE_PMI_APPEND="n"
 if test $HAVE_PCP = "y"; then
-	{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for PMI_APPEND in pcp/import.h" >&5
-printf %s "checking for PMI_APPEND in pcp/import.h... " >&6; }
+	{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for PMI_APPEND and pmiExtraUnits in pcp/import.h" >&5
+printf %s "checking for PMI_APPEND and pmiExtraUnits in pcp/import.h... " >&6; }
 	cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 #include <pcp/pmapi.h>
@@ -4826,6 +4826,9 @@ int
 main (void)
 {
 int f = PMI_APPEND; (void)f;
+					     pmUnits u = pmiExtraUnits(0,0,0,0,0,0,
+					       PM_UNIT_TEMPERATURE, PM_TEMPERATURE_C);
+					     (void)u;
   ;
   return 0;
 }
@@ -4840,37 +4843,6 @@ fi
 rm -f core conftest.err conftest.$ac_objext conftest.beam conftest.$ac_ext
 	{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $HAVE_PMI_APPEND" >&5
 printf "%s\n" "$HAVE_PMI_APPEND" >&6; }
-fi
-
-
-HAVE_PMIEXTRAUNITS="n"
-if test $HAVE_PCP = "y"; then
-	{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for pmiExtraUnits and PM_UNIT_TEMPERATURE in pcp headers" >&5
-printf %s "checking for pmiExtraUnits and PM_UNIT_TEMPERATURE in pcp headers... " >&6; }
-	cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-#include <pcp/pmapi.h>
-					     #include <pcp/import.h>
-int
-main (void)
-{
-pmUnits u = pmiExtraUnits(0,0,0,0,0,0,
-					       PM_UNIT_TEMPERATURE, PM_TEMPERATURE_C);
-					     (void)u;
-  ;
-  return 0;
-}
-_ACEOF
-if ac_fn_c_try_compile "$LINENO"
-then :
-  HAVE_PMIEXTRAUNITS="y"; DFPCP="$DFPCP -DHAVE_PMIEXTRAUNITS"
-else case e in #(
-  e) HAVE_PMIEXTRAUNITS="n" ;;
-esac
-fi
-rm -f core conftest.err conftest.$ac_objext conftest.beam conftest.$ac_ext
-	{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $HAVE_PMIEXTRAUNITS" >&5
-printf "%s\n" "$HAVE_PMIEXTRAUNITS" >&6; }
 fi
 
 

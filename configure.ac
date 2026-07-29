@@ -156,35 +156,25 @@ AC_SUBST(LFPCP_WRITE)
 AC_SUBST(DFPCP)
 
 # Check for PMI_APPEND flag introduced in PCP 7.2.0.
-# Direct PCP archive output from sadc (-O pcp / -O pcp-only) requires this
+# Direct PCP archive output from sadc (-O pcp / -O sa+pcp) requires this
 # flag so that each short-lived invocation appends to the existing daily
-# archive rather than creating a new one.  The feature is not compiled in
-# at all when building against older PCP versions.
+# archive rather than creating a new one.  The same PCP release added
+# pmiExtraUnits() for physical unit dimensions (temperature, voltage),
+# so a single HAVE_PMI_APPEND macro gates all PCP 7.2.0 write features.
 HAVE_PMI_APPEND="n"
 if test $HAVE_PCP = "y"; then
-	AC_MSG_CHECKING(for PMI_APPEND in pcp/import.h)
+	AC_MSG_CHECKING(for PMI_APPEND and pmiExtraUnits in pcp/import.h)
 	AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <pcp/pmapi.h>
 					     #include <pcp/import.h>]],
-					   [[int f = PMI_APPEND; (void)f;]])],
+					   [[int f = PMI_APPEND; (void)f;
+					     pmUnits u = pmiExtraUnits(0,0,0,0,0,0,
+					       PM_UNIT_TEMPERATURE, PM_TEMPERATURE_C);
+					     (void)u;]])],
 		HAVE_PMI_APPEND="y"; DFPCP="$DFPCP -DHAVE_PMI_APPEND",
 		HAVE_PMI_APPEND="n")
 	AC_MSG_RESULT($HAVE_PMI_APPEND)
 fi
 AC_SUBST(HAVE_PMI_APPEND)
-
-HAVE_PMIEXTRAUNITS="n"
-if test $HAVE_PCP = "y"; then
-	AC_MSG_CHECKING(for pmiExtraUnits and PM_UNIT_TEMPERATURE in pcp headers)
-	AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <pcp/pmapi.h>
-					     #include <pcp/import.h>]],
-					   [[pmUnits u = pmiExtraUnits(0,0,0,0,0,0,
-					       PM_UNIT_TEMPERATURE, PM_TEMPERATURE_C);
-					     (void)u;]])],
-		HAVE_PMIEXTRAUNITS="y"; DFPCP="$DFPCP -DHAVE_PMIEXTRAUNITS",
-		HAVE_PMIEXTRAUNITS="n")
-	AC_MSG_RESULT($HAVE_PMIEXTRAUNITS)
-fi
-AC_SUBST(HAVE_PMIEXTRAUNITS)
 
 
 if test $HAVE_PCP_IMPL_H; then

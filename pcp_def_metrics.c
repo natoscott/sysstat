@@ -225,7 +225,7 @@ void act_add_metric(struct activity *a, int metric)
 	pmUseContext(saved);
 }
 
-#ifdef HAVE_PMIEXTRAUNITS
+#ifdef HAVE_PMI_APPEND
 /*
  ***************************************************************************
  * Register a metric using pmiExtraUnits() for physical dimensions that
@@ -263,7 +263,7 @@ static void act_add_metric_ex(struct activity *a, int metric,
 /* Fall back to registering with zero extra units on older PCP */
 #define act_add_metric_ex(a, metric, extra_unit, extra_scale) \
 	act_add_metric((a), (metric))
-#endif /* HAVE_PMIEXTRAUNITS */
+#endif /* HAVE_PMI_APPEND */
 
 /*
  ***************************************************************************
