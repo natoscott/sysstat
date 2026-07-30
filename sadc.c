@@ -736,7 +736,7 @@ void write_special_record(int ofd, int rtype)
  */
 void write_stats(int ofd)
 {
-	int i, p;
+	int i, j, p;
 
 	/* Try to lock file */
 	if (!FILE_LOCKED(flags)) {
@@ -767,9 +767,18 @@ void write_stats(int ofd)
 					p_write_error();
 				}
 			}
-			if (write_all(ofd, act[p]->_buf0, act[p]->fsize * act[p]->_nr0 * act[p]->nr2) !=
-			    (act[p]->fsize * act[p]->_nr0 * act[p]->nr2)) {
-				p_write_error();
+			/*
+			 * Write fsize bytes per element at msize stride.
+			 * This correctly skips any trailing in-memory-only
+			 * fields when msize > fsize.  The read path in
+			 * read_file_stat_bunch() handles this symmetrically.
+			 */
+			for (j = 0; j < act[p]->_nr0 * act[p]->nr2; j++) {
+				if (write_all(ofd,
+				    (char *)act[p]->_buf0 + (size_t)j * act[p]->msize,
+				    act[p]->fsize) != act[p]->fsize) {
+					p_write_error();
+				}
 			}
 		}
 	}
