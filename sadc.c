@@ -1282,19 +1282,25 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 
 				pcp_close_sadc_archive();
 				pmstrncpy(pcp_archive, sizeof(pcp_archive), ofile);
-				pcp_open_sadc_archive(pcp_archive, &file_hdr);
-				pcp_sadc_set_volume_size(local_cfg.volume_size);
-				pcp_register_import_program(pcp_archive, &local_cfg);
-				pcp_write_file_header_metrics(&file_hdr);
-				pcp_write_import_metrics(pcp_archive, &file_hdr, interval, &local_cfg);
-				for (p = 0; p < NR_ACT; p++) {
-					if (!IS_COLLECTED(act[p]->options) ||
-					    !act[p]->f_pcp_print)
-						continue;
-					(*act[p]->f_pcp_print)(act[p], 0);
+				if (pcp_open_sadc_archive(pcp_archive, &file_hdr) < 0) {
+					if (WRITE_PCP_ONLY(flags))
+						exit(4);
+					flags &= ~S_F_PCP_OUTPUT;
 				}
-				pcp_write_uptime(record_hdr.uptime_cs);
-				pcp_write_sadc_sample(record_hdr.ust_time, record_hdr_ust_nsec, flags);
+				else {
+					pcp_sadc_set_volume_size(local_cfg.volume_size);
+					pcp_register_import_program(pcp_archive, &local_cfg);
+					pcp_write_file_header_metrics(&file_hdr);
+					pcp_write_import_metrics(pcp_archive, &file_hdr, interval, &local_cfg);
+					for (p = 0; p < NR_ACT; p++) {
+						if (!IS_COLLECTED(act[p]->options) ||
+						    !act[p]->f_pcp_print)
+							continue;
+						(*act[p]->f_pcp_print)(act[p], 0);
+					}
+					pcp_write_uptime(record_hdr.uptime_cs);
+					pcp_write_sadc_sample(record_hdr.ust_time, record_hdr_ust_nsec, flags);
+				}
 			}
 #endif /* HAVE_PMI_APPEND */
 
