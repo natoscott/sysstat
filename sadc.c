@@ -39,10 +39,10 @@
 #ifdef HAVE_PMI_APPEND
 #include <pcp/pmapi.h>
 #include <pcp/import.h>
-#include "pcp_stats.h"
 #include "pcp_def_metrics.h"
-#include "pcp_local.h"
 #endif
+#include "pcp_stats.h"
+#include "pcp_local.h"
 
 #ifdef USE_NLS
 #include <locale.h>
@@ -72,12 +72,12 @@ extern char *tzname[2];
 long interval = -1;
 uint64_t flags = 0;
 
+/* Local PMDA metric collection configuration (from sysstat.pcpconf) */
+static struct pcp_local_config local_cfg;
+
 #ifdef HAVE_PMI_APPEND
 /* PCP archive base path (without extension, derived from safile or explicit) */
 char pcp_archive[MAX_FILE_LEN] = "";
-
-/* Local PMDA metric collection configuration (from sysstat.pcpconf) */
-static struct pcp_local_config local_cfg;
 
 /*
  * Derive the PCP archive base path from the native sa file path.

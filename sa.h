@@ -1582,7 +1582,7 @@ int skip_extra_struct
 int write_all
 	(int, const void *, int);
 
-#if defined(SOURCE_SAR) || defined(SOURCE_SADF) || defined(HAVE_PCP)
+#if !defined(SOURCE_SADC) || defined(HAVE_PCP)
 int add_list_item
 	(struct sa_item **, char *, int, int *);
 void allocate_bitmaps
@@ -1711,5 +1711,5 @@ void set_record_timestamp_string
 	(uint64_t, char *, char *, int, struct tstamp_ext *);
 void swap_struct
 	(const unsigned int [], void *, int);
-#endif /* SOURCE_SADF || SOURCE_SAR defined */
+#endif /* !SOURCE_SADC || HAVE_PCP */
 #endif  /* _SA_H */

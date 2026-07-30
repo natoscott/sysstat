@@ -49,10 +49,13 @@ HAVE_PCP = @HAVE_PCP@
 LFPCP_READ =
 LFPCP_WRITE =
 DFPCP =
-# PCP object files: empty when HAVE_PCP=n so link lines need no ifdefs
+# PCP object files: conditional objects are empty when HAVE_PCP=n.
+# pcp_stats.o and pcp_def_metrics.o are always linked into sadf and sar
+# because act_sadf.o/act_sar.o reference pcp_print_* functions unconditionally
+# (the functions compile to stubs when HAVE_PCP is not defined).
 PCP_SADC_OBJS =
-PCP_SADF_OBJS =
-PCP_SAR_OBJS =
+PCP_SAR_OBJ =
+PCP_LOCAL_OBJ =
 PCP_IOSTAT_OBJ =
 PCP_MPSTAT_OBJ =
 PCP_PIDSTAT_OBJ =
@@ -63,8 +66,8 @@ LFPCP_READ = @LFPCP_READ@
 LFPCP_WRITE = @LFPCP_WRITE@
 DFPCP = @DFPCP@
 PCP_SADC_OBJS   = pcp_stats.o pcp_def_metrics.o pcp_local.o
-PCP_SADF_OBJS   = pcp_stats.o pcp_def_metrics.o pcp_local.o
-PCP_SAR_OBJS    = pcp_stats.o pcp_def_metrics.o pcp_local.o
+PCP_SAR_OBJ     = pcp_sar.o
+PCP_LOCAL_OBJ   = pcp_local.o
 PCP_IOSTAT_OBJ  = pcp_iostat.o
 PCP_MPSTAT_OBJ  = pcp_mpstat.o
 PCP_PIDSTAT_OBJ = pcp_pidstat.o
@@ -366,16 +369,20 @@ sadc: LFLAGS += $(LFSENSORS) $(LFPCP_WRITE)
 
 sadc: sadc.o act_sadc.o sa_wrap.o sa_common_light.o common_light.o $(PCP_SADC_OBJS) systest.o librdstats.a librdsensors.a libsyscom.a
 
-sar.o: sar.c sa.h version.h common.h rd_stats.h rd_sensors.h systest.h pcp_stats.h pcp_def_metrics.h
+sar.o: sar.c sa.h version.h common.h rd_stats.h rd_sensors.h pcp_stats.h pcp_sar.h systest.h
+	$(CC) -o $@ -c $(CFLAGS) -DSOURCE_SAR $(DFLAGS) $<
 
 sar: LFLAGS += $(LFPCP_WRITE)
-sar: sar.o act_sar.o format_sar.o sa_common.o pr_stats.o pr_xstats.o $(PCP_SAR_OBJS) librdstats_light.a libsyscom.a
+sar: sar.o act_sar.o format_sar.o sa_common.o pr_stats.o pr_xstats.o pcp_stats.o pcp_def_metrics.o $(PCP_SAR_OBJ) $(PCP_LOCAL_OBJ) librdstats_light.a libsyscom.a
+
+pcp_sar.o: pcp_sar.c sa.h version.h common.h rd_stats.h rd_sensors.h pcp_stats.h pcp_def_metrics.h pcp_sar.h systest.h
+	$(CC) -o $@ -c $(CFLAGS) -DSOURCE_SAR $(DFLAGS) $<
 
 sadf.o: sadf.c sadf.h version.h sa.h common.h rd_stats.h rd_sensors.h systest.h
 
 sadf: LFLAGS += $(LFPCP_WRITE)
 
-sadf: sadf.o act_sadf.o format_sadf.o sadf_misc.o $(PCP_SADF_OBJS) sa_conv.o rndr_stats.o xml_stats.o json_stats.o svg_stats.o raw_stats.o sa_common.o librdstats_light.a libsyscom.a
+sadf: sadf.o act_sadf.o format_sadf.o sadf_misc.o pcp_stats.o pcp_def_metrics.o $(PCP_LOCAL_OBJ) sa_conv.o rndr_stats.o xml_stats.o json_stats.o svg_stats.o raw_stats.o sa_common.o librdstats_light.a libsyscom.a
 
 iostat.o: iostat.c iostat.h version.h common.h rd_stats.h count.h systest.h pcp_iostat.h
 

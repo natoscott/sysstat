@@ -40,12 +40,15 @@
 #include <pcp/import.h>
 #endif
 
+#ifdef HAVE_PCP
+
 extern struct record_header record_hdr[];
 extern struct activity *act[];
 extern uint64_t flags;
 static const char * const bat_status[] = {
 	"Unknown", "Charging", "Discharging", "NotCharging", "Full"
 };
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -66,6 +69,7 @@ unsigned long pcp_read_u32(pmValueSet *values, int inst, pmDesc *descs, int metr
 			&atom, PM_TYPE_U32);
 	return atom.ul;
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -86,6 +90,7 @@ unsigned long long pcp_read_u64(pmValueSet *values, int inst, pmDesc *descs, int
 			&atom, PM_TYPE_U64);
 	return atom.ull;
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -106,6 +111,8 @@ float pcp_read_float(pmValueSet *values, int inst, pmDesc *descs, int metric)
 			&atom, PM_TYPE_FLOAT);
 	return atom.f;
 }
+#endif /* HAVE_PCP */
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -126,6 +133,7 @@ double pcp_read_double(pmValueSet *values, int inst, pmDesc *descs, int metric)
 			&atom, PM_TYPE_DOUBLE);
 	return atom.d;
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -182,6 +190,8 @@ static size_t pcp_slot_for_item(struct sa_item *item_list, const char *name)
 	return 0;
 }
 
+#endif /* HAVE_PCP — end of pcp_read_* functions */
+
 /*
  ***************************************************************************
  * Write CPU statistics in PCP format.
@@ -193,6 +203,7 @@ static size_t pcp_slot_for_item(struct sa_item *item_list, const char *name)
  */
 __print_funct_t pcp_print_cpu_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	int i, handle;
@@ -340,7 +351,9 @@ __print_funct_t pcp_print_cpu_stats(struct activity *a, int curr)
 		 * the correct IRQ::cpuN instance naming; do not write it here.
 		 */
 	}
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -483,6 +496,7 @@ void pcp_read_cpu_stats(pmValueSet *values, struct activity *a, int curr)
 		break;
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -495,6 +509,7 @@ void pcp_read_cpu_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_softnet_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	size_t slot;
@@ -558,7 +573,9 @@ __print_funct_t pcp_print_softnet_stats(struct activity *a, int curr)
 		handle = ACT_HANDLE(m, SOFTNET_PERCPU_BACKLOGLENGTH, slot);
 		pmiPutAtomValueHandle(handle, &atom);
 	}
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -638,6 +655,7 @@ void pcp_read_softnet_stats(pmValueSet *values, struct activity *a, int curr)
 		break;
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -650,6 +668,7 @@ void pcp_read_softnet_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_pcsw_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	struct stats_pcsw
@@ -660,7 +679,9 @@ __print_funct_t pcp_print_pcsw_stats(struct activity *a, int curr)
 
 	atom.ull = (unsigned long long)spc->processes;
 	pmiPutAtomValueHandle(ACT_HANDLE(m, PCSW_FORK_SYSCALLS, 0), &atom);
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -693,6 +714,7 @@ void pcp_read_pcsw_stats(pmValueSet *values, struct activity *a, int curr)
 		break;
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -705,6 +727,7 @@ void pcp_read_pcsw_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_irq_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	size_t slot;
@@ -773,7 +796,9 @@ __print_funct_t pcp_print_irq_stats(struct activity *a, int curr)
 			}
 		}
 	}
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -805,6 +830,7 @@ void pcp_read_irq_stats(pmValueSet *values, struct activity *a, int curr)
 		break;
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -817,6 +843,7 @@ void pcp_read_irq_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_swap_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	struct stats_swap
@@ -827,7 +854,9 @@ __print_funct_t pcp_print_swap_stats(struct activity *a, int curr)
 
 	atom.ull = (unsigned long long)ssc->pswpout;
 	pmiPutAtomValueHandle(ACT_HANDLE(m, SWAP_PAGESOUT, 0), &atom);
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -855,6 +884,7 @@ void pcp_read_swap_stats(pmValueSet *values, struct activity *a, int curr)
 		break;
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -867,6 +897,7 @@ void pcp_read_swap_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_paging_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	struct stats_paging
@@ -901,7 +932,9 @@ __print_funct_t pcp_print_paging_stats(struct activity *a, int curr)
 
 	atom.ull = (unsigned long long)spc->pgdemote;
 	pmiPutAtomValueHandle(ACT_HANDLE(m, PAGING_PGDEMOTE, 0), &atom);
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -979,6 +1012,7 @@ void pcp_read_paging_stats(pmValueSet *values, struct activity *a, int curr)
 		break;
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -991,6 +1025,7 @@ void pcp_read_paging_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_io_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	struct stats_io
@@ -1016,6 +1051,7 @@ __print_funct_t pcp_print_io_stats(struct activity *a, int curr)
 
 	atom.ull = (unsigned long long)sic->dk_drive_dblk;
 	pmiPutAtomValueHandle(ACT_HANDLE(m, IO_ALLDEV_DISCARDBYTES, 0), &atom);
+#endif /* HAVE_PCP */
 }
 
 /*
@@ -1125,6 +1161,7 @@ void pcp_print_swap_memory_stats(struct stats_memory *smc)
 	pmiPutAtomValueHandle(ACT_HANDLE(m, SWAP_LENGTH, 0), &atom);
 #endif	/* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -1177,6 +1214,7 @@ void pcp_read_io_stats(pmValueSet *values, struct activity *a, int curr)
 		break;
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -1189,12 +1227,15 @@ void pcp_read_io_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_memory_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct stats_memory
 		*smc = (struct stats_memory *) a->buf[curr];
 
 	pcp_print_ram_memory_stats(smc, TRUE);
 	pcp_print_swap_memory_stats(smc);
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -1303,6 +1344,7 @@ void pcp_read_memory_stats(pmValueSet *values, struct activity *a, int curr)
 		break;
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -1315,6 +1357,7 @@ void pcp_read_memory_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_ktables_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	struct stats_ktables
@@ -1331,7 +1374,9 @@ __print_funct_t pcp_print_ktables_stats(struct activity *a, int curr)
 
 	atom.ul = (unsigned long)skc->pty_nr;
 	pmiPutAtomValueHandle(ACT_HANDLE(m, KTABLE_PTYS, 0), &atom);
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -1370,6 +1415,7 @@ void pcp_read_ktable_stats(pmValueSet *values, struct activity *a, int curr)
 		break;
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -1382,6 +1428,7 @@ void pcp_read_ktable_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_queue_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	struct stats_queue
@@ -1404,7 +1451,9 @@ __print_funct_t pcp_print_queue_stats(struct activity *a, int curr)
 
 	atom.f = (float)sqc->load_avg_15 / 100.0;
 	pmiPutAtomValueHandle(ACT_HANDLE(m, KQUEUE_LOADAVG, pcp_find_slot(m, 15)), &atom);
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -1469,6 +1518,7 @@ void pcp_read_kqueue_stats(pmValueSet *values, struct activity *a, int curr)
 		break;
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -1481,6 +1531,7 @@ void pcp_read_kqueue_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_disk_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *cm;
 	struct sa_item *ilist;
 	pmAtomValue atom;
@@ -1670,8 +1721,10 @@ __print_funct_t pcp_print_disk_stats(struct activity *a, int curr)
 			pmiPutAtomValueHandle(handle, &atom);
 		}
 	}
+#endif /* HAVE_PCP */
 }
 
+#ifdef HAVE_PCP
 /*
  ***************************************************************************
  * Read disks statistics from PCP format.
@@ -1702,6 +1755,7 @@ static int pcp_lookup_disk_major_minor(const char *name,
 	fclose(fp);
 	return 0;
 }
+#ifdef HAVE_PCP
 
 void pcp_read_disk_stats(pmValueSet *values, struct activity *a, int curr)
 {
@@ -1793,6 +1847,8 @@ void pcp_read_disk_stats(pmValueSet *values, struct activity *a, int curr)
 		}
 	}
 }
+#endif /* HAVE_PCP */
+#endif /* HAVE_PCP — disk helpers */
 
 /*
  ***************************************************************************
@@ -1805,6 +1861,7 @@ void pcp_read_disk_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_dev_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	size_t slot;
@@ -1875,7 +1932,9 @@ __print_funct_t pcp_print_net_dev_stats(struct activity *a, int curr)
 			pmiPutAtomValueHandle(handle, &atom);
 		}
 	}
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -1938,6 +1997,7 @@ void pcp_read_netdev_stats(pmValueSet *values, struct activity *a, int curr)
 		}
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -1950,6 +2010,7 @@ void pcp_read_netdev_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_edev_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	size_t slot;
@@ -2004,7 +2065,9 @@ __print_funct_t pcp_print_net_edev_stats(struct activity *a, int curr)
 		atom.ull = (unsigned long long)snedc->tx_fifo_errors;
 		pmiPutAtomValueHandle(handle, &atom);
 	}
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -2074,6 +2137,7 @@ void pcp_read_enetdev_stats(pmValueSet *values, struct activity *a, int curr)
 		}
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -2086,6 +2150,7 @@ void pcp_read_enetdev_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_serial_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	size_t slot;
@@ -2124,7 +2189,9 @@ __print_funct_t pcp_print_serial_stats(struct activity *a, int curr)
 		atom.ul = (unsigned long)ssc->overrun;
 		pmiPutAtomValueHandle(handle, &atom);
 	}
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -2182,6 +2249,7 @@ void pcp_read_serial_stats(pmValueSet *values, struct activity *a, int curr)
 		}
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -2194,6 +2262,7 @@ void pcp_read_serial_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_nfs_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	struct stats_net_nfs
@@ -2216,7 +2285,9 @@ __print_funct_t pcp_print_net_nfs_stats(struct activity *a, int curr)
 
 	atom.ul = (unsigned long)snnc->nfs_getattcnt;
 	pmiPutAtomValueHandle(ACT_HANDLE(m, NFSCLIENT_REQUESTS, pcp_slot_for_item(a->item_list, "getattr")), &atom);
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -2280,6 +2351,7 @@ void pcp_read_net_nfs_stats(pmValueSet *values, struct activity *a, int curr)
 		break;
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -2292,6 +2364,7 @@ void pcp_read_net_nfs_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_nfsd_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	struct stats_net_nfsd
@@ -2329,7 +2402,9 @@ __print_funct_t pcp_print_net_nfsd_stats(struct activity *a, int curr)
 
 	atom.ull = (unsigned long long)snndc->nfsd_getattcnt;
 	pmiPutAtomValueHandle(ACT_HANDLE(m, NFSSERVER_REQUESTS, pcp_slot_for_item(a->item_list, "getattr")), &atom);
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -2423,6 +2498,7 @@ void pcp_read_net_nfsd_stats(pmValueSet *values, struct activity *a, int curr)
 		break;
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -2435,6 +2511,7 @@ void pcp_read_net_nfsd_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_sock_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	struct stats_net_sock
@@ -2457,7 +2534,9 @@ __print_funct_t pcp_print_net_sock_stats(struct activity *a, int curr)
 
 	atom.ul = (unsigned long)snsc->tcp_tw;
 	pmiPutAtomValueHandle(ACT_HANDLE(m, SOCKET_TCPTW, 0), &atom);
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -2507,6 +2586,7 @@ void pcp_read_net_sock_stats(pmValueSet *values, struct activity *a, int curr)
 		break;
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -2519,6 +2599,7 @@ void pcp_read_net_sock_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_ip_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	struct stats_net_ip
@@ -2547,7 +2628,9 @@ __print_funct_t pcp_print_net_ip_stats(struct activity *a, int curr)
 
 	atom.ull = (unsigned long long)snic->FragCreates;
 	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_IP_FRAGCREATES, 0), &atom);
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -2615,6 +2698,7 @@ void pcp_read_net_ip_stats(pmValueSet *values, struct activity *a, int curr)
 		break;
 	}
 }
+#endif /* HAVE_PCP */
 /*
  ***************************************************************************
  * Write IP network errors statistics in PCP format.
@@ -2626,6 +2710,7 @@ void pcp_read_net_ip_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_eip_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	struct stats_net_eip
@@ -2654,7 +2739,9 @@ __print_funct_t pcp_print_net_eip_stats(struct activity *a, int curr)
 
 	atom.ull = (unsigned long long)sneic->FragFails;
 	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EIP_FRAGFAILS, 0), &atom);
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -2722,6 +2809,7 @@ void pcp_read_net_eip_stats(pmValueSet *values, struct activity *a, int curr)
 		break;
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -2734,6 +2822,7 @@ void pcp_read_net_eip_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_icmp_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	struct stats_net_icmp
@@ -2780,7 +2869,9 @@ __print_funct_t pcp_print_net_icmp_stats(struct activity *a, int curr)
 
 	atom.ull = (unsigned long long)snic->OutAddrMaskReps;
 	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP_OUTADDRMASKREPS, 0), &atom);
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -2884,6 +2975,7 @@ void pcp_read_net_icmp_stats(pmValueSet *values, struct activity *a, int curr)
 		break;
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -2896,6 +2988,7 @@ void pcp_read_net_icmp_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_eicmp_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	struct stats_net_eicmp
@@ -2936,7 +3029,9 @@ __print_funct_t pcp_print_net_eicmp_stats(struct activity *a, int curr)
 
 	atom.ull = (unsigned long long)sneic->OutRedirects;
 	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EICMP_OUTREDIRECTS, 0), &atom);
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -3028,6 +3123,7 @@ void pcp_read_net_eicmp_stats(pmValueSet *values, struct activity *a, int curr)
 		break;
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -3040,6 +3136,7 @@ void pcp_read_net_eicmp_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_tcp_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	struct stats_net_tcp
@@ -3056,7 +3153,9 @@ __print_funct_t pcp_print_net_tcp_stats(struct activity *a, int curr)
 
 	atom.ull = (unsigned long long)sntc->OutSegs;
 	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_TCP_OUTSEGS, 0), &atom);
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -3100,6 +3199,7 @@ void pcp_read_net_tcp_stats(pmValueSet *values, struct activity *a, int curr)
 		break;
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -3112,6 +3212,7 @@ void pcp_read_net_tcp_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_etcp_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	struct stats_net_etcp
@@ -3131,7 +3232,9 @@ __print_funct_t pcp_print_net_etcp_stats(struct activity *a, int curr)
 
 	atom.ull = (unsigned long long)snetc->OutRsts;
 	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ETCP_OUTRSTS, 0), &atom);
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -3181,6 +3284,7 @@ void pcp_read_net_etcp_stats(pmValueSet *values, struct activity *a, int curr)
 		break;
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -3193,6 +3297,7 @@ void pcp_read_net_etcp_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_udp_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	struct stats_net_udp
@@ -3209,7 +3314,9 @@ __print_funct_t pcp_print_net_udp_stats(struct activity *a, int curr)
 
 	atom.ull = (unsigned long long)snuc->InErrors;
 	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_UDP_INERRORS, 0), &atom);
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -3253,6 +3360,7 @@ void pcp_read_net_udp_stats(pmValueSet *values, struct activity *a, int curr)
 		break;
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -3265,6 +3373,7 @@ void pcp_read_net_udp_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_sock6_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	struct stats_net_sock6
@@ -3281,7 +3390,9 @@ __print_funct_t pcp_print_net_sock6_stats(struct activity *a, int curr)
 
 	atom.ul = (unsigned long)snsc->frag6_inuse;
 	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_SOCK6_FRAGINUSE, 0), &atom);
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -3325,6 +3436,7 @@ void pcp_read_net_sock6_stats(pmValueSet *values, struct activity *a, int curr)
 		break;
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -3337,6 +3449,7 @@ void pcp_read_net_sock6_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_ip6_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	struct stats_net_ip6
@@ -3371,7 +3484,9 @@ __print_funct_t pcp_print_net_ip6_stats(struct activity *a, int curr)
 
 	atom.ull = (unsigned long long)snic->FragCreates6;
 	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_IP6_FRAGCREATES, 0), &atom);
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -3451,6 +3566,7 @@ void pcp_read_net_ip6_stats(pmValueSet *values, struct activity *a, int curr)
 		break;
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -3463,6 +3579,7 @@ void pcp_read_net_ip6_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_eip6_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	struct stats_net_eip6
@@ -3500,7 +3617,9 @@ __print_funct_t pcp_print_net_eip6_stats(struct activity *a, int curr)
 
 	atom.ull = (unsigned long long)sneic->InTruncatedPkts6;
 	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EIP6_INTRUNCATEDPKTS, 0), &atom);
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -3586,6 +3705,7 @@ void pcp_read_net_eip6_stats(pmValueSet *values, struct activity *a, int curr)
 		break;
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -3598,6 +3718,7 @@ void pcp_read_net_eip6_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_icmp6_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	struct stats_net_icmp6
@@ -3653,7 +3774,9 @@ __print_funct_t pcp_print_net_icmp6_stats(struct activity *a, int curr)
 
 	atom.ull = (unsigned long long)snic->OutNeighborAdvertisements6;
 	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_ICMP6_OUTNEIGHBORADVERTISEMENTS, 0), &atom);
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -3775,6 +3898,7 @@ void pcp_read_net_icmp6_stats(pmValueSet *values, struct activity *a, int curr)
 		break;
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -3787,6 +3911,7 @@ void pcp_read_net_icmp6_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_eicmp6_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	struct stats_net_eicmp6
@@ -3824,7 +3949,9 @@ __print_funct_t pcp_print_net_eicmp6_stats(struct activity *a, int curr)
 
 	atom.ull = (unsigned long long)sneic->OutPktTooBigs6;
 	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_EICMP6_OUTPKTTOOBIGS, 0), &atom);
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -3910,6 +4037,7 @@ void pcp_read_net_eicmp6_stats(pmValueSet *values, struct activity *a, int curr)
 		break;
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -3922,6 +4050,7 @@ void pcp_read_net_eicmp6_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_net_udp6_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	struct stats_net_udp6
@@ -3938,7 +4067,9 @@ __print_funct_t pcp_print_net_udp6_stats(struct activity *a, int curr)
 
 	atom.ull = (unsigned long long)snuc->InErrors6;
 	pmiPutAtomValueHandle(ACT_HANDLE(m, NET_UDP6_INERRORS, 0), &atom);
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -3982,6 +4113,7 @@ void pcp_read_net_udp6_stats(pmValueSet *values, struct activity *a, int curr)
 		break;
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -3994,6 +4126,7 @@ void pcp_read_net_udp6_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_pwr_cpufreq_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	int i;
@@ -4020,7 +4153,9 @@ __print_funct_t pcp_print_pwr_cpufreq_stats(struct activity *a, int curr)
 		atom.f = (float)((double) spc->cpufreq) / 100;
 		pmiPutAtomValueHandle(ACT_HANDLE(m, POWER_PERCPU_CLOCK, pcp_find_slot(m, i - 1)), &atom);
 	}
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -4052,6 +4187,7 @@ void pcp_read_pwr_cpufreq_stats(pmValueSet *values, struct activity *a, int curr
 				     POWER_PERCPU_CLOCK);
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -4064,6 +4200,7 @@ void pcp_read_pwr_cpufreq_stats(pmValueSet *values, struct activity *a, int curr
  */
 __print_funct_t pcp_print_pwr_fan_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	size_t slot;
@@ -4089,7 +4226,9 @@ __print_funct_t pcp_print_pwr_fan_stats(struct activity *a, int curr)
 		atom.cp = spc->device;
 		pmiPutAtomValueHandle(handle, &atom);
 	}
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -4134,6 +4273,7 @@ void pcp_read_power_fan_stats(pmValueSet *values, struct activity *a, int curr)
 		}
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -4146,6 +4286,7 @@ void pcp_read_power_fan_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_pwr_temp_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	size_t slot;
@@ -4173,7 +4314,9 @@ __print_funct_t pcp_print_pwr_temp_stats(struct activity *a, int curr)
 		atom.cp = spc->device;
 		pmiPutAtomValueHandle(handle, &atom);
 	}
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -4215,6 +4358,7 @@ void pcp_read_power_temp_stats(pmValueSet *values, struct activity *a, int curr)
 		}
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -4227,6 +4371,7 @@ void pcp_read_power_temp_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_pwr_in_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	size_t slot;
@@ -4254,7 +4399,9 @@ __print_funct_t pcp_print_pwr_in_stats(struct activity *a, int curr)
 		atom.cp = spc->device;
 		pmiPutAtomValueHandle(handle, &atom);
 	}
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -4296,6 +4443,7 @@ void pcp_read_power_in_stats(pmValueSet *values, struct activity *a, int curr)
 		}
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  * **************************************************************************
@@ -4308,6 +4456,7 @@ void pcp_read_power_in_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_pwr_bat_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	size_t slot;
@@ -4335,7 +4484,9 @@ __print_funct_t pcp_print_pwr_bat_stats(struct activity *a, int curr)
 		atom.cp = (char *)bat_status[(unsigned int) spbc->status];
 		pmiPutAtomValueHandle(handle, &atom);
 	}
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -4377,6 +4528,7 @@ void pcp_read_power_bat_stats(pmValueSet *values, struct activity *a, int curr)
 		}
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -4389,6 +4541,7 @@ void pcp_read_power_bat_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_huge_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	struct stats_huge
@@ -4405,7 +4558,9 @@ __print_funct_t pcp_print_huge_stats(struct activity *a, int curr)
 
 	atom.ull = (unsigned long long)smc->surphkb * 1024;
 	pmiPutAtomValueHandle(ACT_HANDLE(m, MEM_HUGE_SURPBYTES, 0), &atom);
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -4449,6 +4604,7 @@ void pcp_read_huge_stats(pmValueSet *values, struct activity *a, int curr)
 		break;
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -4461,6 +4617,7 @@ void pcp_read_huge_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_pwr_usb_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	size_t slot;
@@ -4501,7 +4658,9 @@ __print_funct_t pcp_print_pwr_usb_stats(struct activity *a, int curr)
 		atom.cp = suc->product;
 		pmiPutAtomValueHandle(handle, &atom);
 	}
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -4561,6 +4720,7 @@ void pcp_read_power_usb_stats(pmValueSet *values, struct activity *a, int curr)
 		}
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -4573,6 +4733,7 @@ void pcp_read_power_usb_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_filesystem_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	size_t slot;
@@ -4627,7 +4788,9 @@ __print_funct_t pcp_print_filesystem_stats(struct activity *a, int curr)
 		atom.ull = (unsigned long long)sfc->f_bavail / 1024;
 		pmiPutAtomValueHandle(handle, &atom);
 	}
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -4692,6 +4855,7 @@ void pcp_read_filesystem_stats(pmValueSet *values, struct activity *a, int curr)
 		}
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -4704,6 +4868,7 @@ void pcp_read_filesystem_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_fchost_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	size_t slot;
@@ -4731,7 +4896,9 @@ __print_funct_t pcp_print_fchost_stats(struct activity *a, int curr)
 		atom.ull = (unsigned long long)sfcc->f_txwords * 4;
 		pmiPutAtomValueHandle(handle, &atom);
 	}
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -4786,6 +4953,7 @@ void pcp_read_fchost_stats(pmValueSet *values, struct activity *a, int curr)
 		}
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -4798,6 +4966,7 @@ void pcp_read_fchost_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_psicpu_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	struct stats_psi_cpu
@@ -4814,7 +4983,9 @@ __print_funct_t pcp_print_psicpu_stats(struct activity *a, int curr)
 
 	atom.ull = (unsigned long long)psic->some_cpu_total;
 	pmiPutAtomValueHandle(ACT_HANDLE(m, PSI_CPU_SOMETOTAL, 0), &atom);
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -4869,6 +5040,7 @@ void pcp_read_psicpu_stats(pmValueSet *values, struct activity *a, int curr)
 		break;
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -4881,6 +5053,7 @@ void pcp_read_psicpu_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_psiio_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	struct stats_psi_io
@@ -4909,7 +5082,9 @@ __print_funct_t pcp_print_psiio_stats(struct activity *a, int curr)
 
 	atom.ull = (unsigned long long)psic->full_io_total;
 	pmiPutAtomValueHandle(ACT_HANDLE(m, PSI_IO_FULLTOTAL, 0), &atom);
+#endif /* HAVE_PCP */
 }
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -4998,6 +5173,7 @@ void pcp_read_psiio_stats(pmValueSet *values, struct activity *a, int curr)
 		break;
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -5010,6 +5186,7 @@ void pcp_read_psiio_stats(pmValueSet *values, struct activity *a, int curr)
  */
 __print_funct_t pcp_print_psimem_stats(struct activity *a, int curr)
 {
+#ifdef HAVE_PCP
 	struct act_metrics *m = a->metrics;
 	pmAtomValue atom;
 	struct stats_psi_mem
@@ -5038,7 +5215,11 @@ __print_funct_t pcp_print_psimem_stats(struct activity *a, int curr)
 
 	atom.ull = (unsigned long long)psic->full_mem_total;
 	pmiPutAtomValueHandle(ACT_HANDLE(m, PSI_MEM_FULLTOTAL, 0), &atom);
+#endif /* HAVE_PCP */
 }
+
+#ifdef HAVE_PCP
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -5127,6 +5308,8 @@ void pcp_read_psimem_stats(pmValueSet *values, struct activity *a, int curr)
 		break;
 	}
 }
+#endif /* HAVE_PCP */
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -5189,6 +5372,8 @@ void pcp_read_file_header_stats(pmValueSet *values, struct file_header *file_hdr
 			break;
 	}
 }
+#endif /* HAVE_PCP */
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -5215,6 +5400,8 @@ void pcp_read_record_header_stats(pmValueSet *values, int curr)
 			break;
 	}
 }
+#endif /* HAVE_PCP */
+#ifdef HAVE_PCP
 
 /*
  ***************************************************************************
@@ -5719,6 +5906,7 @@ void pcp_read_stats(pmValueSet *values, struct file_header *header, int curr)
 			break;
 	}
 }
+#endif /* HAVE_PCP */
 
 /*
  ***************************************************************************
@@ -6560,3 +6748,4 @@ void pcp_close_sadc_archive(void)
 	pmiEnd();
 }
 #endif /* HAVE_PMI_APPEND */
+#endif /* HAVE_PCP */

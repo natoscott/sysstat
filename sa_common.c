@@ -539,7 +539,7 @@ int write_all(int fd, const void *buf, int nr_bytes)
 	return offset;
 }
 
-#if defined(SOURCE_SAR) || defined(SOURCE_SADF) || defined(HAVE_PCP)
+#if !defined(SOURCE_SADC) || defined(HAVE_PCP)
 /*
  * **************************************************************************
  * Init buffers for min and max values.
@@ -4043,4 +4043,4 @@ void print_minmax(int ismax)
 			      : _("Minimum:"));
 }
 
-#endif /* SOURCE_SAR || SOURCE_SADF defined */
+#endif /* !SOURCE_SADC */

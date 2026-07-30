@@ -585,7 +585,7 @@ size_t mul_check_overflow4(size_t val1, size_t val2, size_t val3, size_t val4)
 	return (val1 * val2 * val3 * val4);
 }
 
-#if defined(SOURCE_SAR) || defined(SOURCE_SADF) || defined(HAVE_PCP)
+#if !defined(SOURCE_SADC) || defined(HAVE_PCP)
 /*
  ***************************************************************************
  * Read /proc/devices file and get device-mapper major number.

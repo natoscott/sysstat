@@ -8,6 +8,8 @@
 #define _PCP_DEF_METRICS_H
 
 #ifdef HAVE_PCP
+#include <pcp/pmapi.h>
+#include <pcp/import.h>
 
 /* Forward declaration so pcp_def_*_metrics function prototypes compile
  * cleanly when this header is included before sa.h. */

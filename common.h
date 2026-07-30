@@ -365,7 +365,7 @@ size_t mul_check_overflow3
 size_t mul_check_overflow4
 	(size_t, size_t, size_t, size_t);
 
-#if defined(SOURCE_SAR) || defined(SOURCE_SADF) || defined(HAVE_PCP)
+#if !defined(SOURCE_SADC) || defined(HAVE_PCP)
 int count_bits
 	(void *, int);
 int count_csvalues
@@ -428,5 +428,5 @@ void xprintf
 void xprintf0
 	(int, const char *, ...);
 
-#endif /* SOURCE_SADF || SOURCE_SAR ||HAVE_PCP */
+#endif /* !SOURCE_SADC || HAVE_PCP */
 #endif  /* _COMMON_H */
