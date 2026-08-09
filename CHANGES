@@ -1,5 +1,25 @@
 Changes:
 
+2026/06/02: Version 12.8.0 - Sebastien Godard (sysstat <at> orange.fr)
+	* sadc: Add -O pcp and -O pcp-only options to write PCP (Performance
+	  Co-Pilot) archives directly, enabling integration with pmval(1),
+	  pmchart(1) and other PCP tooling.  Requires PCP 7.2.0 or later.
+	  - -O pcp: write both native sysstat and PCP formats simultaneously.
+	  - -O pcp-only: write PCP format only (no native .sa file).
+	  PCP archives are stored in per-day directories (pcpDD/ or
+	  pcpYYYYMMDD/ with -D) alongside native data files.
+	* sadc: PCP archives include sadc.version, sadc.activities,
+	  sadc.interval and sadc.comment self-description metrics plus a
+	  {"sadc":true} context label for easy identification via pminfo(1).
+	* sadc: Restart events write a PCP mark record to signal data gaps;
+	  admin comments are stored as timestamped sadc.comment annotations.
+	* sar: Can now read PCP archives directly via -f, including pcpDD/
+	  directories.  Format auto-detection tries PCP first, then native.
+	* sadf: PCP archive generation (-l) uses pmiHighResWrite() throughout
+	  for Y2038-safe nanosecond-resolution timestamps.
+	* [Nathan Scott, Red Hat]: PCP integration implementation.
+	* Update sadc(8), sar(1) and sa1(8) manual pages.
+
 2025/12/07: Version 12.7.9 - Sebastien Godard (sysstat <at> orange.fr)
 	* sar: Fix pgsteal/s double value with recent kernels.
 	* Allow Truecolor (RGB) SGR codes in sysstat commands output.
