@@ -440,11 +440,12 @@ static void read_stats_from_pcpfile(int ctxid, const char from_file[])
 	if (print_report_hdr_pcpfile(ctxid, from_file) == 0)
 		return;
 
-	if (tm_start.use != NO_TIME &&
-		(sts = get_timespec_from_timestamp_struct(flags, log_label.timezone,
+	if (tm_start.use != NO_TIME) {
+		if ((sts = get_timespec_from_timestamp_struct(flags, log_label.timezone,
 				&log_label.start, &tm_start, &start)) != 0) {
-		fprintf(stderr, _("Cannot decode requested start time\n"));
-		return;
+			fprintf(stderr, _("Cannot decode requested start time\n"));
+			return;
+		}
 	} else {
 		start = log_label.start;
 	}
