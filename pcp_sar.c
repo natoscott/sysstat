@@ -99,8 +99,6 @@ static int write_stats_pcp(int curr, long *cnt, int reset, unsigned int act_id)
 }
 
 /*
-
-/*
  ***************************************************************************
  * Print report header.
  *
@@ -520,8 +518,6 @@ static void read_stats_from_pcpfile(int ctxid, const char from_file[])
 	}
 	while (!done);
 }
-
-/*
 
 /*
  ***************************************************************************
