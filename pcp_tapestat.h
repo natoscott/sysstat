@@ -14,7 +14,7 @@ int pcp_tapestat_run(const char *archive);
 #else
 
 static inline int
-pcp_tapestat_run(const char *a __attribute__((unused))) { return 0; }
+pcp_tapestat_run(const char *a __attribute__((unused))) { fprintf(stderr, "PCP archive support not available in this build\n"); return 1; }
 
 #endif
 #endif /* _PCP_TAPESTAT_H */

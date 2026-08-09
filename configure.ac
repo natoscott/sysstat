@@ -145,7 +145,7 @@ if test $HAVE_PCP = "y"; then
 	PCP=no
 	AC_CHECK_LIB(pcp, pmGetVersion, LFPCP_READ="-lpcp"; LFPCP_WRITE="-lpcp -lpcp_import", HAVE_PCP="n")
 	AC_MSG_CHECKING(for PCP libraries)
-	AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <pcp/pmapi.h>
+	AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <pcp/pmapi.h>
 					     #include <pcp/import.h>]],
 					   [[pmiEnd();]])],PCP=yes; DFPCP="-DHAVE_PCP", HAVE_PCP="n"; PCP=no)
 	AC_MSG_RESULT($PCP)
@@ -164,7 +164,7 @@ AC_SUBST(DFPCP)
 HAVE_PMI_APPEND="n"
 if test $HAVE_PCP = "y"; then
 	AC_MSG_CHECKING(for PMI_APPEND and pmiExtraUnits in pcp/import.h)
-	AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <pcp/pmapi.h>
+	AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <pcp/pmapi.h>
 					     #include <pcp/import.h>]],
 					   [[int f = PMI_APPEND; (void)f;
 					     pmUnits u = pmiExtraUnits(0,0,0,0,0,0,

@@ -23,7 +23,7 @@ int pcp_pidstat_run(const char *archive);
 #else /* !HAVE_PCP */
 
 static inline int
-pcp_pidstat_run(const char *a __attribute__((unused))) { return 0; }
+pcp_pidstat_run(const char *a __attribute__((unused))) { fprintf(stderr, "PCP archive support not available in this build\n"); return 1; }
 
 #endif /* HAVE_PCP */
 #endif /* _PCP_PIDSTAT_H */
