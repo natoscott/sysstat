@@ -33,6 +33,7 @@
 #include "cifsiostat.h"
 #include "rd_stats.h"
 #include "count.h"
+#include "pcp_cifsiostat.h"
 
 #include <locale.h>	/* For setlocale() */
 #ifdef USE_NLS
@@ -57,7 +58,6 @@ struct io_cifs *cifs_list = NULL;
 int cpu_nr = 0;		/* Nb of processors on the machine */
 uint64_t flags = 0;	/* Flag for common options and system state */
 uint64_t xflags = 0;	/* Extended flag for options used by multiple commands */
-int dplaces_nr = -1;	/* Number of decimal places */
 
 long interval = 0;
 char timestamp[TIMESTAMP_LEN];
@@ -78,16 +78,16 @@ void usage(char *progname)
 	fprintf(stderr, _("Usage: %s [ options ] [ <interval> [ <count> ] ]\n"),
 		progname);
 
-#ifdef DEBUG
 	fprintf(stderr, _("Options are:\n"
-			  "[ --dec={ 0 | 1 | 2 } ] [ --human ] [ --pretty ] [ -o JSON ]\n"
-			  "[ -h ] [ -k | -m | -G ] [ -t ] [ -U ] [ -V ] [ -y ]\n"
-			  "[ --debuginfo ]\n"));
-#else
-	fprintf(stderr, _("Options are:\n"
-			  "[ --dec={ 0 | 1 | 2 } ] [ --human ] [ --pretty ] [ -o JSON ]\n"
-			  "[ -h ] [ -k | -m | -G ] [ -t ] [ -U ] [ -V ] [ -y ]\n"));
+#ifdef PCP_WRITE
+			  "[ -a <archive> ] "
 #endif
+			  "[ --dec={ 0 | 1 | 2 } ] [ --human ] [ --pretty ] [ -o JSON ]\n"
+			  "[ -h ] [ -k | -m | -G ] [ -t ] [ -U ] [ -V ] [ -y ]"
+#ifdef DEBUG
+			  " [ --debuginfo ]"
+#endif
+			  "\n"));
 	exit(1);
 }
 
@@ -663,8 +663,15 @@ int main(int argc, char **argv)
 	/* Process args... */
 	while (opt < argc) {
 
+		if (!strcmp(argv[opt], "-a")) {
+			if (!argv[++opt]) {
+				usage(argv[0]);
+			}
+			exit(pcp_cifsiostat_run(argv[opt]));
+		}
+
 #ifdef DEBUG
-		if (!strcmp(argv[opt], "--debuginfo")) {
+		else if (!strcmp(argv[opt], "--debuginfo")) {
 			xflags |= X_D_DEBUG;
 			opt++;
 		} else

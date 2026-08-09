@@ -31,6 +31,7 @@
 
 #include "version.h"
 #include "mpstat.h"
+#include "pcp_mpstat.h"
 #include "count.h"
 
 #include <locale.h>	/* For setlocale() */
@@ -100,8 +101,6 @@ uint64_t xflags = 0;	/* Extended flag for options used by multiple commands */
 
 /* Interval and count parameters */
 long interval = -1, count = 0;
-/* Number of decimal places */
-int dplaces_nr = -1;
 
 /*
  * Nb of processors on the machine.
@@ -139,7 +138,7 @@ void usage(char *progname)
 		progname);
 
 	fprintf(stderr, _("Options are:\n"
-			  "[ -A ] [ -H ] [ -n ] [ -T ] [ -U ] [ -u ] [ -V ]\n"
+			  "[ -a <archive> ] [ -A ] [ -H ] [ -n ] [ -T ] [ -U ] [ -u ] [ -V ]\n"
 			  "[ -I { SUM | CPU | SCPU | ALL } ] [ -N { <node_list> | ALL } ]\n"
 			  "[ --dec={ 0 | 1 | 2 } ] [ -o JSON ] [ -P { <cpu_list> | ALL } ]\n"));
 	exit(1);
@@ -2201,7 +2200,14 @@ int main(int argc, char **argv)
 
 	while (++opt < argc) {
 
-		if (!strncmp(argv[opt], "--dec=", 6) && (strlen(argv[opt]) == 7)) {
+		if (!strcmp(argv[opt], "-a")) {
+			if (!argv[++opt]) {
+				usage(argv[0]);
+			}
+			exit(pcp_mpstat_run(argv[opt]));
+		}
+
+		else if (!strncmp(argv[opt], "--dec=", 6) && (strlen(argv[opt]) == 7)) {
 			/* Check that the argument is a digit */
 			if (!isdigit(argv[opt][6])) {
 				usage(argv[0]);
