@@ -48,13 +48,18 @@ struct strlist {
 
 static void strlist_add(struct strlist *sl, const char *s)
 {
+	char **tmp;
+	char *d;
+
 	if (sl->count >= sl->capacity) {
 		sl->capacity = sl->capacity ? sl->capacity * 2 : 16;
-		char **tmp = realloc(sl->items, sl->capacity * sizeof(char *));
+		tmp = realloc(sl->items, sl->capacity * sizeof(char *));
 		if (!tmp) { perror("realloc"); exit(4); }
 		sl->items = tmp;
 	}
-	{ char *d = strdup(s); if (!d) { perror("strdup"); exit(4); } sl->items[sl->count++] = d; }
+	d = strdup(s);
+	if (!d) { perror("strdup"); exit(4); }
+	sl->items[sl->count++] = d;
 }
 
 static void strlist_free(struct strlist *sl)
@@ -113,9 +118,11 @@ static struct pcp_metric_group *
 group_add(struct pcp_local_config *cfg, const char *name)
 {
 	struct pcp_metric_group *g;
+	void *_t;
 
-	cfg->groups = realloc(cfg->groups,
-			      (cfg->num_groups + 1) * sizeof(*cfg->groups));
+	_t = realloc(cfg->groups, (cfg->num_groups + 1) * sizeof(*cfg->groups));
+	if (!_t) { perror("realloc"); exit(4); }
+	cfg->groups = _t;
 	g = &cfg->groups[cfg->num_groups++];
 	memset(g, 0, sizeof(*g));
 	pmstrncpy(g->name, sizeof(g->name), name);
@@ -125,9 +132,15 @@ group_add(struct pcp_local_config *cfg, const char *name)
 
 static void group_add_metric(struct pcp_metric_group *g, const char *name)
 {
-	g->raw_metrics = realloc(g->raw_metrics,
-				 (g->num_raw + 1) * sizeof(char *));
-	g->raw_metrics[g->num_raw++] = strdup(name);
+	void *_t;
+	char *d;
+
+	_t = realloc(g->raw_metrics, (g->num_raw + 1) * sizeof(char *));
+	if (!_t) { perror("realloc"); exit(4); }
+	g->raw_metrics = _t;
+	d = strdup(name);
+	if (!d) { perror("strdup"); exit(4); }
+	g->raw_metrics[g->num_raw++] = d;
 }
 
 /*
@@ -321,6 +334,7 @@ local_indom_insert(struct pcp_local_config *cfg, struct pcp_local_indom *id,
 		   int inst_id, const char *inst_name)
 {
 	size_t pos, i;
+	void *_t;
 	/* Find insertion point */
 	for (pos = 0; pos < id->hwm; pos++) {
 		if (id->inst_ids[pos] > inst_id)
@@ -331,8 +345,12 @@ local_indom_insert(struct pcp_local_config *cfg, struct pcp_local_indom *id,
 	if (id->hwm >= id->capacity) {
 		size_t new_cap = id->capacity ? id->capacity * 2 : 16;
 
-		id->inst_ids   = realloc(id->inst_ids,   new_cap * sizeof(int));
-		id->inst_names = realloc(id->inst_names, new_cap * sizeof(char *));
+		_t = realloc(id->inst_ids, new_cap * sizeof(int));
+		if (!_t) { perror("realloc"); exit(4); }
+		id->inst_ids   = _t;
+		_t = realloc(id->inst_names, new_cap * sizeof(char *));
+		if (!_t) { perror("realloc"); exit(4); }
+		id->inst_names = _t;
 
 		/* Grow handle arrays for every metric using this indom */
 		for (i = 0; i < cfg->num_metrics; i++) {
@@ -340,7 +358,9 @@ local_indom_insert(struct pcp_local_config *cfg, struct pcp_local_indom *id,
 
 			if (m->indom_idx < 0 || &cfg->indoms[m->indom_idx] != id)
 				continue;
-			m->handles = realloc(m->handles, new_cap * sizeof(int));
+			_t = realloc(m->handles, new_cap * sizeof(int));
+			if (!_t) { perror("realloc"); exit(4); }
+			m->handles = _t;
 			/* Initialise newly allocated slots to -1 */
 			if (new_cap > m->handle_cap) {
 				memset(m->handles + m->handle_cap, -1,
@@ -371,6 +391,7 @@ local_indom_insert(struct pcp_local_config *cfg, struct pcp_local_indom *id,
 
 	id->inst_ids[pos]   = inst_id;
 	id->inst_names[pos] = strdup(inst_name);
+	if (!id->inst_names[pos]) { perror("strdup"); exit(4); }
 
 	/* Initialise handles at this slot for all referencing metrics */
 	for (i = 0; i < cfg->num_metrics; i++) {
@@ -391,14 +412,16 @@ static int
 local_indom_get(struct pcp_local_config *cfg, pmInDom indom)
 {
 	size_t i;
+	void *_t;
 
 	for (i = 0; i < cfg->num_indoms; i++) {
 		if (cfg->indoms[i].indom == indom)
 			return (int)i;
 	}
 
-	cfg->indoms = realloc(cfg->indoms,
-			      (cfg->num_indoms + 1) * sizeof(*cfg->indoms));
+	_t = realloc(cfg->indoms, (cfg->num_indoms + 1) * sizeof(*cfg->indoms));
+	if (!_t) { perror("realloc"); exit(4); }
+	cfg->indoms = _t;
 	memset(&cfg->indoms[cfg->num_indoms], 0, sizeof(*cfg->indoms));
 	cfg->indoms[cfg->num_indoms].indom = indom;
 	return (int)cfg->num_indoms++;
@@ -423,6 +446,8 @@ local_metric_add(struct pcp_local_config *cfg, const char *name)
 	pmDesc desc;
 	int    sts;
 	const char *np = name;
+	struct pcp_local_metric *m;
+	void *_t;
 
 	sts = pmLookupName(1, &np, &pmid);
 	if (sts < 0) {
@@ -438,12 +463,14 @@ local_metric_add(struct pcp_local_config *cfg, const char *name)
 		return -1;
 	}
 
-	cfg->metrics = realloc(cfg->metrics,
-			       (cfg->num_metrics + 1) * sizeof(*cfg->metrics));
+	_t = realloc(cfg->metrics, (cfg->num_metrics + 1) * sizeof(*cfg->metrics));
+	if (!_t) { perror("realloc"); exit(4); }
+	cfg->metrics = _t;
 	memset(&cfg->metrics[cfg->num_metrics], 0, sizeof(*cfg->metrics));
 
-	struct pcp_local_metric *m = &cfg->metrics[cfg->num_metrics];
+	m = &cfg->metrics[cfg->num_metrics];
 	m->name      = strdup(name);
+	if (!m->name) { perror("strdup"); exit(4); }
 	m->pmid      = pmid;
 	m->desc      = desc;
 	m->handle    = -1;
@@ -526,6 +553,7 @@ pcp_local_init(struct pcp_local_config *cfg)
 
 	/* Build flat PMID array for pmFetch */
 	cfg->pmids = malloc(cfg->num_metrics * sizeof(pmID));
+	if (!cfg->pmids) { perror("malloc"); exit(4); }
 	for (j = 0; j < cfg->num_metrics; j++)
 		cfg->pmids[j] = cfg->metrics[j].pmid;
 
@@ -802,6 +830,20 @@ pcp_local_free(struct pcp_local_config *cfg)
 	}
 	free(cfg->indoms);
 	free(cfg->pmids);
+
+	for (i = 0; i < cfg->num_groups; i++) {
+		unsigned int k;
+
+		for (k = 0; k < cfg->groups[i].num_raw; k++)
+			free(cfg->groups[i].raw_metrics[k]);
+		free(cfg->groups[i].raw_metrics);
+	}
+	free(cfg->groups);
+
+	if (local_ctx >= 0) {
+		pmDestroyContext(local_ctx);
+		local_ctx = -1;
+	}
 
 	memset(cfg, 0, sizeof(*cfg));
 }

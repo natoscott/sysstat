@@ -237,22 +237,23 @@ vset_u32(pmValueSet *vset, pmDesc *desc, int inst_id)
 	return 0;
 }
 
-static const char *
-vset_str(pmValueSet *vset, pmDesc *desc, int inst_id)
+static void
+vset_str(pmValueSet *vset, pmDesc *desc, int inst_id, char *buf, size_t bufsz)
 {
 	int i;
+	pmAtomValue atom;
 
+	buf[0] = '\0';
 	for (i = 0; i < vset->numval; i++) {
 		if (vset->vlist[i].inst != inst_id)
 			continue;
-		pmAtomValue atom;
-
 		if (pmExtractValue(vset->valfmt, &vset->vlist[i],
 				   desc->type, &atom, PM_TYPE_STRING) < 0)
-			return "";
-		return atom.cp;  /* valid until pmFreeResult */
+			return;
+		snprintf(buf, bufsz, "%s", atom.cp);
+		free(atom.cp);
+		return;
 	}
-	return "";
 }
 
 /* -------------------------------------------------------------------------
@@ -373,17 +374,17 @@ build_snap(int s, pmResult *result)
 
 		/* String fields */
 		if (vs[PCP_PID_CMD])
-			snprintf(p->cmd, sizeof(p->cmd), "%s",
-				 vset_str(vs[PCP_PID_CMD],
-					  &pcp_pid_descs[PCP_PID_CMD], inst));
+			vset_str(vs[PCP_PID_CMD],
+				 &pcp_pid_descs[PCP_PID_CMD], inst,
+				 p->cmd, sizeof(p->cmd));
 		if (vs[PCP_PID_PSARGS])
-			snprintf(p->psargs, sizeof(p->psargs), "%s",
-				 vset_str(vs[PCP_PID_PSARGS],
-					  &pcp_pid_descs[PCP_PID_PSARGS], inst));
+			vset_str(vs[PCP_PID_PSARGS],
+				 &pcp_pid_descs[PCP_PID_PSARGS], inst,
+				 p->psargs, sizeof(p->psargs));
 		if (vs[PCP_PID_UID_NM])
-			snprintf(p->uid_nm, sizeof(p->uid_nm), "%s",
-				 vset_str(vs[PCP_PID_UID_NM],
-					  &pcp_pid_descs[PCP_PID_UID_NM], inst));
+			vset_str(vs[PCP_PID_UID_NM],
+				 &pcp_pid_descs[PCP_PID_UID_NM], inst,
+				 p->uid_nm, sizeof(p->uid_nm));
 	}
 }
 
@@ -456,6 +457,7 @@ display_interval(unsigned long long itv, const char *timestamp)
 		}
 
 		/* -r: memory */
+			dis = 1;
 		if (DISPLAY_MEM(actflag)) {
 			if (dis) {
 				PRINT_ID_HDR(timestamp, pidflag);
@@ -480,6 +482,7 @@ display_interval(unsigned long long itv, const char *timestamp)
 		}
 
 		/* -d: I/O */
+			dis = 1;
 		if (DISPLAY_IO(actflag)) {
 			if (dis) {
 				PRINT_ID_HDR(timestamp, pidflag);
@@ -504,6 +507,7 @@ display_interval(unsigned long long itv, const char *timestamp)
 		}
 
 		/* -w: context switches */
+			dis = 1;
 		if (DISPLAY_CTXSW(actflag)) {
 			if (dis) {
 				PRINT_ID_HDR(timestamp, pidflag);
