@@ -50,9 +50,11 @@ static void strlist_add(struct strlist *sl, const char *s)
 {
 	if (sl->count >= sl->capacity) {
 		sl->capacity = sl->capacity ? sl->capacity * 2 : 16;
-		sl->items = realloc(sl->items, sl->capacity * sizeof(char *));
+		char **tmp = realloc(sl->items, sl->capacity * sizeof(char *));
+		if (!tmp) { perror("realloc"); exit(4); }
+		sl->items = tmp;
 	}
-	sl->items[sl->count++] = strdup(s);
+	{ char *d = strdup(s); if (!d) { perror("strdup"); exit(4); } sl->items[sl->count++] = d; }
 }
 
 static void strlist_free(struct strlist *sl)

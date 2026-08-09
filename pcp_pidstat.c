@@ -626,11 +626,6 @@ pcp_pidstat_run(const char *archive)
 			build_snap(0, result);
 			snap_sort(0);
 
-			/* Swap so [0]=prev, [1] ready for next fetch */
-			tmp_snap = snap[0]; tmp_nr = snap_nr[0]; tmp_cap = snap_cap[0];
-			snap[0] = snap[1]; snap_nr[0] = snap_nr[1]; snap_cap[0] = snap_cap[1];
-			snap[1] = tmp_snap; snap_nr[1] = tmp_nr; snap_cap[1] = tmp_cap;
-
 			if (prev_result)
 				pmFreeResult(prev_result);
 			prev_result = result;

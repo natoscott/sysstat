@@ -299,6 +299,9 @@ static int handle_curr_act_pcpstats(struct timespec *now, struct timespec *end,
 	int numpmids, mode = PM_MODE_FORW;
 	int sts, i, j, davg = 0, next, inc = 0;
 
+	if (metrics == NULL)
+		return PM_ERR_EOL;
+
 	if ((sts = pmSetMode(mode, now, &delta)) < 0) {
 		fprintf(stderr, _("Cannot set sample mode of archive %s\n"), file);
 		return 0;

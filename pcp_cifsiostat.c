@@ -73,6 +73,7 @@ static const char *pcp_cifs_names[PCP_CIFS_NR] = {
 };
 
 static pmID pcp_cifs_pmids[PCP_CIFS_NR];
+static pmDesc pcp_cifs_descs[PCP_CIFS_NR];
 
 static void
 build_cifs_snap(int curr, pmResult *result)
@@ -101,7 +102,7 @@ build_cifs_snap(int curr, pmResult *result)
 		struct io_cifs *ci;
 		struct cifs_st *cs;
 
-		if (pmNameInDom(pcp_cifs_pmids[PCP_CIFS_READ],
+		if (pmNameInDom(pcp_cifs_descs[PCP_CIFS_READ].indom,
 				inst_id, &inst_name) < 0)
 			continue;
 
@@ -141,8 +142,11 @@ pcp_cifsiostat_run(const char *archive)
 		return 1;
 	}
 
-	/* Batch name→PMID lookup in one round-trip; filter absent metrics */
+	/* Batch name→PMID and descriptor lookups */
+	for (m = 0; m < PCP_CIFS_NR; m++)
+		pcp_cifs_pmids[m] = PM_ID_NULL;
 	pmLookupName(PCP_CIFS_NR, pcp_cifs_names, pcp_cifs_pmids);
+	pmLookupDescs(PCP_CIFS_NR, pcp_cifs_pmids, pcp_cifs_descs);
 
 	for (m = 0; m < PCP_CIFS_NR; m++) {
 		if (pcp_cifs_pmids[m] != PM_ID_NULL)

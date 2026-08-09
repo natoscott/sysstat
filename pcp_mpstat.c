@@ -213,12 +213,20 @@ pcp_mpstat_run(const char *archive)
 			cpu_nr = percpu_vset->numval;
 
 			for (i = 0; i < 2; i++) {
+				free(st_cpu[i]);
 				st_cpu[i] = calloc(cpu_nr + 1, sizeof(struct stats_cpu));
 				if (!st_cpu[i]) {
 					perror("calloc");
 					pmFreeResult(result);
 					goto out;
 				}
+			}
+			free(cpu_bitmap);
+			cpu_bitmap = calloc(1, ((cpu_nr + 1) >> 3) + 1);
+			if (!cpu_bitmap) {
+				perror("calloc");
+				pmFreeResult(result);
+				goto out;
 			}
 		}
 
